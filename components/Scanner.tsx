@@ -19,13 +19,27 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
       scannerRef.current = html5QrCode;
 
       const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
+        fps: 20, // Augmenté pour plus de réactivité sur iOS
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          // Zone de scan rectangulaire plus adaptée à l'EAN-13 (plus large que haute)
+          const width = viewfinderWidth * 0.8;
+          const height = viewfinderHeight * 0.4;
+          return { width, height };
+        },
         aspectRatio: 1.777778, // 16:9
         videoConstraints: {
           facingMode: "environment",
           width: { min: 640, ideal: 1280, max: 1920 },
           height: { min: 480, ideal: 720, max: 1080 },
+        },
+        // Optimisations spécifiques pour le décodage
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ],
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
         }
       };
 
