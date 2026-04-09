@@ -86,35 +86,51 @@ const DEFAULT_PROFILE: UserProfile = {
   fatGoal: 65,
 };
 
+const ICON_MAP: Record<string, any> = {
+  Sun,
+  Moon,
+  Apple
+};
+
 const INITIAL_MEALS = [
-  { title: "Petit-déj", icon: Sun, color: "text-yellow-500", products: [] },
-  { title: "Déjeuner", icon: Sun, color: "text-yellow-500", products: [] },
-  { title: "Dîner", icon: Moon, color: "text-indigo-500", products: [] },
-  { title: "En-cas", icon: Apple, color: "text-red-500", products: [] },
+  { title: "Petit-déj", icon: "Sun", color: "text-yellow-500", products: [] },
+  { title: "Déjeuner", icon: "Sun", color: "text-yellow-500", products: [] },
+  { title: "Dîner", icon: "Moon", color: "text-indigo-500", products: [] },
+  { title: "En-cas", icon: "Apple", color: "text-red-500", products: [] },
 ];
 
 export default function App() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"dashboard" | "profile">("dashboard");
   const [profile, setProfile] = useState<UserProfile>(() => {
-    const saved = localStorage.getItem("calo_profile");
-    return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+    try {
+      const saved = localStorage.getItem("calo_profile_v2");
+      return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+    } catch (e) {
+      console.error("Error parsing profile:", e);
+      return DEFAULT_PROFILE;
+    }
   });
 
   const [mealsByDate, setMealsByDate] = useState<Record<string, MealState[]>>(() => {
-    const saved = localStorage.getItem("calo_meals");
-    return saved ? JSON.parse(saved) : {};
+    try {
+      const saved = localStorage.getItem("calo_meals_v2");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error("Error parsing meals:", e);
+      return {};
+    }
   });
 
   const dateKey = format(currentDate, "yyyy-MM-dd");
   const meals = useMemo(() => mealsByDate[dateKey] || INITIAL_MEALS, [mealsByDate, dateKey]);
 
   useEffect(() => {
-    localStorage.setItem("calo_profile", JSON.stringify(profile));
+    localStorage.setItem("calo_profile_v2", JSON.stringify(profile));
   }, [profile]);
 
   useEffect(() => {
-    localStorage.setItem("calo_meals", JSON.stringify(mealsByDate));
+    localStorage.setItem("calo_meals_v2", JSON.stringify(mealsByDate));
   }, [mealsByDate]);
 
   const setMeals = (newMeals: MealState[]) => {
@@ -129,8 +145,21 @@ export default function App() {
   const [scannedProduct, setScannedProduct] = useState<OFFProduct | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [tempQuantity, setTempQuantity] = useState(100);
+  const [tempKcal, setTempKcal] = useState(0);
+  const [tempProtein, setTempProtein] = useState(0);
+  const [tempCarbs, setTempCarbs] = useState(0);
+  const [tempFat, setTempFat] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (scannedProduct) {
+      setTempKcal(scannedProduct.nutriments["energy-kcal_100g"] || 0);
+      setTempProtein(scannedProduct.nutriments.proteins_100g || 0);
+      setTempCarbs(scannedProduct.nutriments.carbohydrates_100g || 0);
+      setTempFat(scannedProduct.nutriments.fat_100g || 0);
+    }
+  }, [scannedProduct]);
 
   const totals = useMemo(() => {
     return meals.reduce((acc, meal) => {
@@ -181,10 +210,10 @@ export default function App() {
       const newProduct: LoggedProduct = {
         id: Math.random().toString(36).substr(2, 9),
         name: scannedProduct.product_name || "Produit inconnu",
-        kcalPer100g: scannedProduct.nutriments["energy-kcal_100g"] || 0,
-        proteinPer100g: scannedProduct.nutriments.proteins_100g || 0,
-        carbsPer100g: scannedProduct.nutriments.carbohydrates_100g || 0,
-        fatPer100g: scannedProduct.nutriments.fat_100g || 0,
+        kcalPer100g: tempKcal,
+        proteinPer100g: tempProtein,
+        carbsPer100g: tempCarbs,
+        fatPer100g: tempFat,
         quantityGrams: tempQuantity,
         imageUrl: scannedProduct.image_url,
       };
@@ -197,11 +226,11 @@ export default function App() {
     }
   };
 
-  const updateProductQuantity = (mealIndex: number, productId: string, newQuantity: number) => {
+  const updateProductDetail = (mealIndex: number, productId: string, field: keyof LoggedProduct, value: any) => {
     const updatedMeals = [...meals];
     const product = updatedMeals[mealIndex].products.find(p => p.id === productId);
     if (product) {
-      product.quantityGrams = newQuantity;
+      (product as any)[field] = value;
       setMeals(updatedMeals);
     }
   };
@@ -376,16 +405,30 @@ export default function App() {
                         <div className="flex justify-between items-start mb-2">
                           <h3 className="font-bold text-slate-800">{meal.title}</h3>
                           {(() => {
-                            const MealIcon = meal.icon;
+                            const MealIcon = ICON_MAP[meal.icon] || Apple;
                             return <MealIcon className={cn("w-6 h-6", meal.color)} />;
                           })()}
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-1 mb-3">
                           <p className="text-xl font-black text-slate-900 leading-none">
                             {mealKcal.toFixed(0)} <span className="text-xs font-medium text-slate-500">kcal</span>
                           </p>
                           <p className="text-xs font-medium text-slate-400">{meal.products.length} aliment(s)</p>
                         </div>
+
+                        {meal.products.length > 0 && (
+                          <div className="space-y-1 border-t pt-2 mt-2">
+                            {meal.products.slice(0, 3).map((p) => (
+                              <div key={p.id} className="flex justify-between items-center text-[10px] text-slate-600">
+                                <span className="truncate flex-1 mr-2 font-medium">{p.name}</span>
+                                <span className="font-bold text-slate-400">{((p.kcalPer100g * p.quantityGrams) / 100).toFixed(0)} kcal</span>
+                              </div>
+                            ))}
+                            {meal.products.length > 3 && (
+                              <p className="text-[9px] text-slate-400 italic">+{meal.products.length - 3} autres...</p>
+                            )}
+                          </div>
+                        )}
                         <Button 
                           size="icon" 
                           variant="secondary" 
@@ -404,37 +447,6 @@ export default function App() {
                 );
               })}
             </div>
-
-            {/* Weight Status Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
-            >
-              <Card className="bg-white border border-slate-100 shadow-sm rounded-3xl overflow-hidden">
-                <CardContent className="p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-indigo-100 p-2 rounded-xl">
-                        <Scale className="w-5 h-5 text-indigo-600" />
-                      </div>
-                      <h2 className="text-lg font-bold text-slate-800">Poids</h2>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400 font-medium">Objectif: {profile.goalWeight} kg</p>
-                      <p className="text-lg font-bold text-slate-900">{profile.currentWeight} kg</p>
-                    </div>
-                  </div>
-                  
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-indigo-500" 
-                      style={{ width: `${Math.max(0, Math.min(100, (profile.currentWeight / profile.goalWeight) * 100))}%` }} 
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
           </motion.main>
         ) : (
           <motion.main 
@@ -446,33 +458,6 @@ export default function App() {
           >
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-6">
               <div className="space-y-4">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Scale className="w-5 h-5 text-indigo-500" />
-                  Données de Poids
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500">Poids Actuel (kg)</Label>
-                    <Input 
-                      type="number" 
-                      value={profile.currentWeight} 
-                      onChange={(e) => setProfile({...profile, currentWeight: Number(e.target.value)})}
-                      className="rounded-xl"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500">Objectif (kg)</Label>
-                    <Input 
-                      type="number" 
-                      value={profile.goalWeight} 
-                      onChange={(e) => setProfile({...profile, goalWeight: Number(e.target.value)})}
-                      className="rounded-xl"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                   <Flame className="w-5 h-5 text-orange-500" />
                   Objectif Calories
@@ -586,21 +571,21 @@ export default function App() {
 
       {/* Scanner Dialog */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
-        <DialogContent className="sm:max-w-md rounded-3xl">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-6">
           <DialogHeader>
             <DialogTitle>Scanner un produit</DialogTitle>
             <DialogDescription>
               Placez le code-barres devant la caméra pour l'analyser.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-2">
             <Scanner 
               isOpen={isScannerOpen} 
               onScanSuccess={handleScanSuccess} 
             />
           </div>
           {isLoading && (
-            <div className="flex items-center justify-center gap-2 text-slate-500">
+            <div className="flex items-center justify-center gap-2 text-slate-500 py-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               Recherche du produit...
             </div>
@@ -610,47 +595,98 @@ export default function App() {
 
       {/* Product Details Modal */}
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
-        <DialogContent className="sm:max-w-md rounded-3xl">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[90vh] overflow-y-auto p-6">
           <DialogHeader>
-            <DialogTitle>Ajouter le produit</DialogTitle>
+            <DialogTitle>Détails du produit</DialogTitle>
           </DialogHeader>
           {scannedProduct && (
-            <div className="space-y-6 py-4">
-              <div className="flex gap-4 items-center">
+            <div className="space-y-5 py-2">
+              <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
                 {scannedProduct.image_url && (
                   <img 
                     src={scannedProduct.image_url} 
                     alt={scannedProduct.product_name} 
-                    className="w-20 h-20 object-contain rounded-xl bg-slate-100 p-1"
+                    className="w-16 h-16 object-contain rounded-xl bg-white p-1 shadow-sm"
                     referrerPolicy="no-referrer"
                   />
                 )}
-                <div>
-                  <h3 className="font-bold text-lg">{scannedProduct.product_name}</h3>
-                  <p className="text-slate-500 text-sm">
-                    {scannedProduct.nutriments["energy-kcal_100g"]?.toFixed(0) || 0} kcal / 100g
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantité (grammes)</Label>
-                <div className="flex gap-4">
-                  <Input 
-                    id="quantity" 
-                    type="number" 
-                    value={tempQuantity} 
-                    onChange={(e) => setTempQuantity(Number(e.target.value))}
-                    className="rounded-xl"
-                  />
-                  <div className="flex items-center font-bold text-orange-600 whitespace-nowrap">
-                    = {((scannedProduct.nutriments["energy-kcal_100g"] || 0) * tempQuantity / 100).toFixed(0)} kcal
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-base text-slate-800 leading-tight mb-1">{scannedProduct.product_name}</h3>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      type="number" 
+                      value={tempKcal} 
+                      onChange={(e) => setTempKcal(Number(e.target.value))}
+                      className="h-8 w-20 text-sm font-bold border-orange-200 focus:border-orange-500"
+                    />
+                    <span className="text-xs text-slate-500 font-medium">kcal / 100g</span>
                   </div>
                 </div>
               </div>
 
-              <Button className="w-full bg-orange-500 hover:bg-orange-600 rounded-xl h-12 font-bold" onClick={addProductToMeal}>
-                Confirmer l'ajout
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Valeurs pour 100g</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1">
+                      <Dna className="w-3 h-3" /> Protéines
+                    </Label>
+                    <Input 
+                      type="number" 
+                      value={tempProtein} 
+                      onChange={(e) => setTempProtein(Number(e.target.value))}
+                      className="h-10 rounded-xl border-blue-100 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1">
+                      <Wheat className="w-3 h-3" /> Glucides
+                    </Label>
+                    <Input 
+                      type="number" 
+                      value={tempCarbs} 
+                      onChange={(e) => setTempCarbs(Number(e.target.value))}
+                      className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1">
+                      <Droplets className="w-3 h-3" /> Lipides
+                    </Label>
+                    <Input 
+                      type="number" 
+                      value={tempFat} 
+                      onChange={(e) => setTempFat(Number(e.target.value))}
+                      className="h-10 rounded-xl border-red-100 focus:border-red-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <Label htmlFor="quantity" className="text-sm font-bold text-slate-700">Quantité consommée (en grammes)</Label>
+                <div className="flex items-center gap-4">
+                  <div className="relative flex-1">
+                    <Input 
+                      id="quantity" 
+                      type="number" 
+                      value={tempQuantity} 
+                      onChange={(e) => setTempQuantity(Number(e.target.value))}
+                      className="rounded-2xl h-12 text-lg font-bold pr-8 border-slate-200 focus:border-orange-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">g</span>
+                  </div>
+                  <div className="bg-orange-50 px-4 py-2 rounded-2xl border border-orange-100">
+                    <p className="text-[10px] text-orange-600 font-bold uppercase">Total</p>
+                    <p className="text-xl font-black text-orange-600 leading-none">
+                      {(tempKcal * tempQuantity / 100).toFixed(0)} <span className="text-xs">kcal</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-orange-100 transition-all active:scale-[0.98]" onClick={addProductToMeal}>
+                Ajouter au repas
               </Button>
             </div>
           )}
@@ -665,10 +701,11 @@ export default function App() {
               <div className="p-6 bg-slate-50 border-b">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
-                    {meals[selectedMealForView].title}
+                    {meals[selectedMealForView]?.title || "Repas"}
                     {(() => {
-                      const MealIcon = meals[selectedMealForView].icon;
-                      return <MealIcon className={cn("w-5 h-5", meals[selectedMealForView].color)} />;
+                      const iconName = meals[selectedMealForView]?.icon;
+                      const MealIcon = ICON_MAP[iconName] || Apple;
+                      return <MealIcon className={cn("w-5 h-5", meals[selectedMealForView]?.color)} />;
                     })()}
                   </DialogTitle>
                   <DialogDescription>
@@ -695,18 +732,66 @@ export default function App() {
                           />
                         )}
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-sm truncate">{product.name}</h4>
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-bold text-sm truncate">{product.name}</h4>
+                            <span className="text-xs font-bold text-orange-600 ml-2">
+                              {((product.kcalPer100g * product.quantityGrams) / 100).toFixed(0)} kcal
+                            </span>
+                          </div>
+                          
                           <div className="flex items-center gap-2 mt-1">
                             <Input 
                               type="number" 
                               value={product.quantityGrams} 
-                              onChange={(e) => updateProductQuantity(selectedMealForView, product.id, Number(e.target.value))}
+                              onChange={(e) => updateProductDetail(selectedMealForView, product.id, "quantityGrams", Number(e.target.value))}
                               className="h-7 w-16 text-xs px-1 rounded-md"
                             />
                             <span className="text-[10px] text-slate-400 font-medium">g</span>
-                            <span className="text-xs font-bold text-orange-600 ml-auto">
-                              {((product.kcalPer100g * product.quantityGrams) / 100).toFixed(0)} kcal
-                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1 mt-2">
+                            <div className="space-y-1">
+                              <div className="text-[8px] text-blue-600 font-bold">Prot (100g)</div>
+                              <Input 
+                                type="number" 
+                                value={product.proteinPer100g} 
+                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "proteinPer100g", Number(e.target.value))}
+                                className="h-6 text-[10px] px-1 rounded-md"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="text-[8px] text-yellow-700 font-bold">Gluc (100g)</div>
+                              <Input 
+                                type="number" 
+                                value={product.carbsPer100g} 
+                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "carbsPer100g", Number(e.target.value))}
+                                className="h-6 text-[10px] px-1 rounded-md"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="text-[8px] text-red-600 font-bold">Lip (100g)</div>
+                              <Input 
+                                type="number" 
+                                value={product.fatPer100g} 
+                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "fatPer100g", Number(e.target.value))}
+                                className="h-6 text-[10px] px-1 rounded-md"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1 mt-2 border-t pt-1">
+                            <div className="text-[9px] text-blue-600 flex justify-between">
+                              <span>Total:</span>
+                              <span className="font-bold">{((product.proteinPer100g * product.quantityGrams) / 100).toFixed(1)}g</span>
+                            </div>
+                            <div className="text-[9px] text-yellow-700 flex justify-between">
+                              <span>Total:</span>
+                              <span className="font-bold">{((product.carbsPer100g * product.quantityGrams) / 100).toFixed(1)}g</span>
+                            </div>
+                            <div className="text-[9px] text-red-600 flex justify-between">
+                              <span>Total:</span>
+                              <span className="font-bold">{((product.fatPer100g * product.quantityGrams) / 100).toFixed(1)}g</span>
+                            </div>
                           </div>
                         </div>
                         <Button 
