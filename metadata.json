@@ -1,0 +1,7 @@
+{
+  "name": "CaloTrack",
+  "description": "Une application de suivi de calories élégante et intuitive pour gérer votre nutrition quotidienne.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
