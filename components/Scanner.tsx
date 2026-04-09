@@ -1,5 +1,8 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Keyboard } from "lucide-react";
 
 interface ScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -11,37 +14,27 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isProcessingRef = useRef(false);
   const regionId = "reader";
+  const [manualCode, setManualCode] = useState("");
+  const [showManual, setShowManual] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !showManual) {
       isProcessingRef.current = false;
       const html5QrCode = new Html5Qrcode(regionId);
       scannerRef.current = html5QrCode;
 
       const config = {
-        fps: 20, // Plus d'images pour capter le mouvement sur iOS
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // Zone de scan large pour forcer l'utilisateur à reculer le tel (meilleur focus)
-          const width = Math.floor(viewfinderWidth * 0.8);
-          const height = Math.floor(viewfinderHeight * 0.4);
-          return { width, height };
-        },
-        // Suppression de l'aspectRatio fixe qui cause des bugs sur Safari
+        fps: 10, // Plus lent pour laisser le temps à l'autofocus iOS
+        qrbox: { width: 280, height: 180 }, // Taille fixe pour éviter les calculs erronés sur iOS
+        aspectRatio: 1.0, // Carré pour le conteneur interne
         videoConstraints: {
           facingMode: "environment",
-          width: { ideal: 1280 }, // Haute résolution pour les barres fines
-          height: { ideal: 720 }
+          // On ne met pas de résolution idéale ici pour laisser iOS choisir la plus stable
         },
-        // Force l'utilisation du détecteur natif iOS 17+
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true
-        },
-        // Focus exclusif sur les formats alimentaires
         formatsToSupport: [
           Html5QrcodeSupportedFormats.EAN_13,
           Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E
+          Html5QrcodeSupportedFormats.CODE_128
         ]
       };
 
@@ -52,9 +45,6 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
           (decodedText) => {
             if (!isProcessingRef.current) {
               isProcessingRef.current = true;
-              // Vibration haptique pour confirmer le scan (optionnel)
-              if (navigator.vibrate) navigator.vibrate(100);
-              
               html5QrCode.stop().then(() => {
                 onScanSuccess(decodedText);
               }).catch(() => {
@@ -63,54 +53,77 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
             }
           },
           (errorMessage) => {
-            // On ne loggue pas les échecs de frame pour éviter de saturer la console
-            if (onScanError && !errorMessage.includes("No barcode")) {
-              onScanError(errorMessage);
-            }
+            if (onScanError) onScanError(errorMessage);
           }
         ).catch((err) => {
-          console.error("Impossible de démarrer le scanner:", err);
+          console.error("Error starting scanner", err);
         });
-      }, 400); // Délai légèrement augmenté pour le montage du DOM
+      }, 500);
 
       return () => {
         clearTimeout(timer);
         const currentScanner = scannerRef.current;
         if (currentScanner && currentScanner.isScanning) {
           currentScanner.stop()
-            .then(() => currentScanner.clear())
-            .catch(err => {
-              if (!err.includes("not scanning")) console.error(err);
-            });
+            .then(() => {
+              currentScanner.clear();
+            })
+            .catch(() => {});
         }
       };
     }
-  }, [isOpen, onScanSuccess, onScanError]);
+  }, [isOpen, onScanSuccess, onScanError, showManual]);
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualCode.trim()) {
+      onScanSuccess(manualCode.trim());
+      setManualCode("");
+    }
+  };
 
   return (
-    <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-square relative shadow-2xl border border-white/10">
-      <div id={regionId} className="w-full h-full" />
+    <div className="flex flex-col gap-4">
+      <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-square relative border-4 border-slate-100 shadow-inner">
+        {showManual ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-slate-900 text-white">
+            <Keyboard className="w-12 h-12 mb-4 text-indigo-400" />
+            <form onSubmit={handleManualSubmit} className="w-full space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">Code-barres (13 chiffres)</label>
+                <Input 
+                  value={manualCode}
+                  onChange={(e) => setManualCode(e.target.value)}
+                  placeholder="Ex: 3017620422003"
+                  className="bg-white text-black"
+                  type="number"
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" className="w-full bg-indigo-500 hover:bg-indigo-600">
+                Valider
+              </Button>
+            </form>
+          </div>
+        ) : (
+          <>
+            <div id={regionId} className="w-full h-full" />
+            <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40">
+              <div className="w-full h-full border-2 border-indigo-400/50 rounded-lg relative">
+                <div className="absolute top-1/2 left-0 w-full h-0.5 bg-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
       
-      {/* Overlay de visée */}
-      {isOpen && (
-        <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-white/20 m-12 rounded-lg" />
-      )}
-
-      {!isOpen && (
-        <div className="absolute inset-0 flex items-center justify-center text-white/50 font-mono text-xs uppercase tracking-widest">
-          Scanner en pause
-        </div>
-      )}
-
-      {/* Injection CSS pour corriger le rendu vidéo Safari */}
-      <style>{`
-        #${regionId} video {
-          object-fit: cover !important;
-          width: 100% !important;
-          height: 100% !important;
-        }
-        #${regionId} b { display: none !important; } /* Masque les textes inutiles de la librairie */
-      `}</style>
+      <Button 
+        variant="outline" 
+        onClick={() => setShowManual(!showManual)}
+        className="w-full border-slate-200 text-slate-600"
+      >
+        {showManual ? "Retour au scanner" : "Saisir manuellement le code"}
+      </Button>
     </div>
   );
 };
