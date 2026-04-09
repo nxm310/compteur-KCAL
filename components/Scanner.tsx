@@ -84,7 +84,7 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-square relative border-4 border-slate-100 shadow-inner">
+      <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-[4/3] relative border-4 border-slate-100 shadow-inner">
         {showManual ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-slate-900 text-white">
             <Keyboard className="w-12 h-12 mb-4 text-indigo-400" />

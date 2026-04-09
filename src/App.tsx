@@ -31,7 +31,8 @@ import {
   Scale,
   Dna,
   Droplets,
-  Wheat
+  Wheat,
+  History
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -141,7 +142,22 @@ export default function App() {
   };
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [activeMealIndex, setActiveMealIndex] = useState<number | null>(null);
+  const [productHistory, setProductHistory] = useState<LoggedProduct[]>(() => {
+    try {
+      const saved = localStorage.getItem("calo_history_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Error parsing history:", e);
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("calo_history_v2", JSON.stringify(productHistory));
+  }, [productHistory]);
+
   const [scannedProduct, setScannedProduct] = useState<OFFProduct | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [tempQuantity, setTempQuantity] = useState(100);
@@ -221,8 +237,25 @@ export default function App() {
       const updatedMeals = [...meals];
       updatedMeals[activeMealIndex].products.push(newProduct);
       setMeals(updatedMeals);
+
+      // Add to history
+      setProductHistory(prev => {
+        const filtered = prev.filter(p => p.name !== newProduct.name);
+        return [newProduct, ...filtered].slice(0, 50); // Keep last 50
+      });
+
       setIsProductModalOpen(false);
       setScannedProduct(null);
+    }
+  };
+
+  const addHistoryProductToMeal = (product: LoggedProduct) => {
+    if (activeMealIndex !== null) {
+      const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
+      const updatedMeals = [...meals];
+      updatedMeals[activeMealIndex].products.push(newProduct);
+      setMeals(updatedMeals);
+      setIsScannerOpen(false);
     }
   };
 
@@ -246,8 +279,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
       {/* Header */}
-      <header className="px-6 pt-8 pb-4 flex flex-col items-center relative bg-white border-b border-slate-100">
-        <div className="w-full flex justify-between items-center mb-4">
+      <header className="px-6 pt-6 pb-4 flex flex-col items-center relative bg-white border-b border-slate-100">
+        <div className="w-full flex justify-between items-center">
           <Button 
             variant="ghost" 
             size="icon" 
@@ -256,36 +289,54 @@ export default function App() {
           >
             {view === "dashboard" ? <Menu className="w-6 h-6" /> : <ArrowLeft className="w-6 h-6" />}
           </Button>
-          <h1 className="text-xl font-bold tracking-tight">
-            {view === "dashboard" ? "CaloTrack" : "Profil & Objectifs"}
-          </h1>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className={cn("rounded-full", view === "profile" && "bg-slate-100")}
-            onClick={() => setView("profile")}
-          >
-            <User className="w-6 h-6" />
-          </Button>
-        </div>
-
-        {view === "dashboard" && (
-          <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
+          <div className="text-center">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">
+              {view === "dashboard" ? "Tableau de Bord Calories" : "Profil & Objectifs"}
+            </h1>
+            {view === "dashboard" && (
+              <p className="text-sm font-medium text-slate-500">
+                {format(currentDate, "d MMMM yyyy", { locale: fr })}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {view === "dashboard" && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="rounded-full text-slate-600"
+                onClick={() => setIsHistoryOpen(true)}
+              >
+                <History className="w-6 h-6" />
+              </Button>
+            )}
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8 rounded-lg"
+              className={cn("rounded-full", view === "profile" && "bg-slate-100")}
+              onClick={() => setView("profile")}
+            >
+              <User className="w-7 h-7" />
+            </Button>
+          </div>
+        </div>
+
+        {view === "dashboard" && (
+          <div className="mt-4 flex items-center gap-4 bg-slate-50 px-4 py-1.5 rounded-2xl border border-slate-100">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-7 w-7 rounded-lg"
               onClick={() => setCurrentDate(subDays(currentDate, 1))}
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="w-4 h-4" />
             </Button>
             
             <button 
-              className="flex items-center gap-2 font-bold text-slate-700 hover:text-indigo-600 transition-colors"
+              className="text-xs font-bold text-slate-600 hover:text-orange-600 transition-colors"
               onClick={() => setIsDatePickerOpen(true)}
             >
-              <CalendarIcon className="w-4 h-4" />
-              {isSameDay(currentDate, new Date()) ? "Aujourd'hui" : format(currentDate, "d MMMM", { locale: fr })}
+              Changer la date
             </button>
 
             <Button 
@@ -315,72 +366,59 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <Card className="bg-orange-500 border-none shadow-2xl shadow-orange-200 overflow-hidden">
-                <CardContent className="p-6 text-white space-y-6">
-                  <div className="flex justify-between items-center">
-                    <h2 className="text-lg font-semibold opacity-90">Résumé Quotidien</h2>
-                    <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">
-                      {totals.kcal.toFixed(0)} / {profile.calorieGoal} kcal
-                    </div>
-                  </div>
+              <Card className="bg-[#FF6B00] border-none shadow-xl rounded-[2.5rem] overflow-hidden">
+                <CardContent className="p-7 text-white space-y-5">
+                  <h2 className="text-xl font-bold text-center">Résumé Quotidien</h2>
                   
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-white/20 p-2 rounded-xl">
-                        <Flame className="w-6 h-6 fill-white" />
+                  <div className="flex justify-around items-center">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-2xl">
+                        <Flame className="w-8 h-8 fill-white text-white" />
                       </div>
                       <div>
-                        <p className="text-xs opacity-80 leading-tight">Consommé:</p>
-                        <p className="text-2xl font-bold">{totals.kcal.toFixed(0)} <span className="text-sm font-normal opacity-80">kcal</span></p>
+                        <p className="text-[11px] font-medium opacity-90">Calories Consommées:</p>
+                        <p className="text-2xl font-black">{totals.kcal.toFixed(0)} <span className="text-sm font-bold">kcal</span></p>
                       </div>
                     </div>
-                    <div className="flex items-start gap-3 text-right">
-                      <div>
-                        <p className="text-xs opacity-80 leading-tight">Restant:</p>
-                        <p className="text-2xl font-bold">{remaining.toFixed(0)} <span className="text-sm font-normal opacity-80">kcal</span></p>
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-2xl">
+                        <Target className="w-8 h-8 text-white" />
                       </div>
-                      <div className="bg-white/20 p-2 rounded-xl">
-                        <Target className="w-6 h-6" />
+                      <div>
+                        <p className="text-[11px] font-medium opacity-90">Objectif Quotidien:</p>
+                        <p className="text-2xl font-black">{profile.calorieGoal} <span className="text-sm font-bold">kcal</span></p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Progress value={progress} className="h-3 bg-white/30" />
+                  <div className="space-y-3">
+                    <div className="h-3 bg-white/30 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        className="h-full bg-white rounded-full"
+                      />
+                    </div>
+                    <p className="text-center text-lg font-bold text-yellow-300">
+                      Restant: {remaining.toFixed(0)} kcal
+                    </p>
                   </div>
 
-                  {/* Macros Grid */}
-                  <div className="grid grid-cols-3 gap-2 pt-2">
-                    <div className="bg-white/10 p-3 rounded-2xl text-center">
-                      <p className="text-[10px] uppercase tracking-wider opacity-70 mb-1">Protéines</p>
-                      <p className="font-bold">{totals.protein.toFixed(0)}g</p>
-                      <div className="w-full h-1 bg-white/20 rounded-full mt-1 overflow-hidden">
-                        <div 
-                          className="h-full bg-blue-300" 
-                          style={{ width: `${Math.min((totals.protein / profile.proteinGoal) * 100, 100)}%` }} 
-                        />
-                      </div>
-                    </div>
-                    <div className="bg-white/10 p-3 rounded-2xl text-center">
-                      <p className="text-[10px] uppercase tracking-wider opacity-70 mb-1">Glucides</p>
-                      <p className="font-bold">{totals.carbs.toFixed(0)}g</p>
-                      <div className="w-full h-1 bg-white/20 rounded-full mt-1 overflow-hidden">
-                        <div 
-                          className="h-full bg-yellow-300" 
-                          style={{ width: `${Math.min((totals.carbs / profile.carbsGoal) * 100, 100)}%` }} 
-                        />
-                      </div>
-                    </div>
-                    <div className="bg-white/10 p-3 rounded-2xl text-center">
-                      <p className="text-[10px] uppercase tracking-wider opacity-70 mb-1">Lipides</p>
-                      <p className="font-bold">{totals.fat.toFixed(0)}g</p>
-                      <div className="w-full h-1 bg-white/20 rounded-full mt-1 overflow-hidden">
-                        <div 
-                          className="h-full bg-red-300" 
-                          style={{ width: `${Math.min((totals.fat / profile.fatGoal) * 100, 100)}%` }} 
-                        />
-                      </div>
-                    </div>
+                  <div className="flex justify-center items-center gap-8 text-sm font-bold opacity-90">
+                    <p>Aliments: <span className="text-lg">{totals.kcal.toFixed(0)}</span></p>
+                    <div className="w-px h-4 bg-white/30" />
+                    <p>Activités: <span className="text-lg">0</span></p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                    <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-2xl h-12 font-bold text-lg shadow-sm">
+                      <Leaf className="w-5 h-5 mr-2 text-green-600" />
+                      Nutrition
+                    </Button>
+                    <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-2xl h-12 font-bold text-lg shadow-sm">
+                      <BarChart3 className="w-5 h-5 mr-2 text-slate-700" />
+                      Stats
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -398,48 +436,34 @@ export default function App() {
                     transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
                   >
                     <Card 
-                      className="border-none shadow-md hover:shadow-xl transition-shadow duration-300 rounded-3xl cursor-pointer"
+                      className="border-none shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-[2rem] cursor-pointer overflow-hidden"
                       onClick={() => setSelectedMealForView(index)}
                     >
                       <CardContent className="p-5 relative">
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-bold text-slate-800">{meal.title}</h3>
+                        <div className="flex justify-between items-start">
+                          <h3 className="text-xl font-bold text-slate-900">{meal.title}</h3>
                           {(() => {
                             const MealIcon = ICON_MAP[meal.icon] || Apple;
-                            return <MealIcon className={cn("w-6 h-6", meal.color)} />;
+                            return <MealIcon className={cn("w-7 h-7", meal.color)} />;
                           })()}
                         </div>
-                        <div className="space-y-1 mb-3">
-                          <p className="text-xl font-black text-slate-900 leading-none">
-                            {mealKcal.toFixed(0)} <span className="text-xs font-medium text-slate-500">kcal</span>
+                        <div className="mt-2">
+                          <p className="text-2xl font-black text-slate-900 leading-tight">
+                            {mealKcal.toFixed(1)} <span className="text-sm font-bold text-slate-500">kcal</span>
                           </p>
-                          <p className="text-xs font-medium text-slate-400">{meal.products.length} aliment(s)</p>
+                          <p className="text-sm font-bold text-slate-400">{meal.products.length} Food(s)</p>
                         </div>
-
-                        {meal.products.length > 0 && (
-                          <div className="space-y-1 border-t pt-2 mt-2">
-                            {meal.products.slice(0, 3).map((p) => (
-                              <div key={p.id} className="flex justify-between items-center text-[10px] text-slate-600">
-                                <span className="truncate flex-1 mr-2 font-medium">{p.name}</span>
-                                <span className="font-bold text-slate-400">{((p.kcalPer100g * p.quantityGrams) / 100).toFixed(0)} kcal</span>
-                              </div>
-                            ))}
-                            {meal.products.length > 3 && (
-                              <p className="text-[9px] text-slate-400 italic">+{meal.products.length - 3} autres...</p>
-                            )}
-                          </div>
-                        )}
                         <Button 
                           size="icon" 
                           variant="secondary" 
-                          className="absolute bottom-4 right-4 w-8 h-8 rounded-xl bg-slate-100 text-slate-600 hover:bg-orange-500 hover:text-white transition-colors"
+                          className="absolute bottom-4 right-4 w-10 h-10 rounded-2xl bg-slate-400 text-white hover:bg-orange-500 transition-colors shadow-md"
                           onClick={(e) => {
                             e.stopPropagation();
                             setActiveMealIndex(index);
                             setIsScannerOpen(true);
                           }}
                         >
-                          <Plus className="w-5 h-5" />
+                          <Plus className="w-6 h-6" />
                         </Button>
                       </CardContent>
                     </Card>
@@ -447,6 +471,30 @@ export default function App() {
                 );
               })}
             </div>
+
+            {/* Activities Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+            >
+              <Card className="bg-[#007AFF] border-none shadow-xl rounded-[2rem] overflow-hidden">
+                <CardContent className="p-6 text-white">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="bg-white/20 p-2 rounded-xl">
+                      <Footprints className="w-6 h-6 text-white" />
+                    </div>
+                    <h3 className="text-2xl font-bold">Activités</h3>
+                  </div>
+                  <p className="text-lg font-bold opacity-90 mb-6">
+                    Calories Actives: <span className="text-2xl">0.0</span>
+                  </p>
+                  <Button className="w-full bg-white text-[#007AFF] hover:bg-slate-100 rounded-2xl h-14 font-black text-xl shadow-md">
+                    Ajouter un exercice
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
           </motion.main>
         ) : (
           <motion.main 
@@ -527,7 +575,94 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Date Picker Dialog */}
+      {/* History Dialog */}
+      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
+          <div className="p-6 pb-4 border-b bg-white">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-500" />
+                Historique des aliments
+              </DialogTitle>
+            </DialogHeader>
+          </div>
+          
+          <div className="overflow-y-auto p-6 pt-4 flex-1">
+            {productHistory.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vos aliments récents</p>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 text-[10px] text-slate-400 hover:text-red-500"
+                    onClick={() => setProductHistory([])}
+                  >
+                    Tout effacer
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {productHistory.map((product) => (
+                    <div
+                      key={product.id}
+                      className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 group"
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : (
+                          <Apple className="w-6 h-6 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 truncate">{product.name}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {product.kcalPer100g} kcal/100g • {product.quantityGrams}g
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[10px] font-bold text-slate-400 text-center mb-1">Ajouter à :</p>
+                        <div className="flex gap-1">
+                          {meals.map((meal, idx) => (
+                            <Button
+                              key={idx}
+                              size="icon"
+                              variant="secondary"
+                              className="w-7 h-7 rounded-lg bg-white hover:bg-orange-500 hover:text-white transition-colors"
+                              onClick={() => {
+                                const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
+                                const updatedMeals = [...meals];
+                                updatedMeals[idx].products.push(newProduct);
+                                setMeals(updatedMeals);
+                                setIsHistoryOpen(false);
+                              }}
+                            >
+                              {(() => {
+                                const Icon = ICON_MAP[meal.icon] || Apple;
+                                return <Icon className="w-3 h-3" />;
+                              })()}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
+                  <History className="w-8 h-8 text-slate-200" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-slate-400">Aucun historique</p>
+                  <p className="text-xs text-slate-300">Vos aliments scannés apparaîtront ici.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
@@ -571,25 +706,69 @@ export default function App() {
 
       {/* Scanner Dialog */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-6">
-          <DialogHeader>
-            <DialogTitle>Scanner un produit</DialogTitle>
-            <DialogDescription>
-              Placez le code-barres devant la caméra pour l'analyser.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            <Scanner 
-              isOpen={isScannerOpen} 
-              onScanSuccess={handleScanSuccess} 
-            />
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
+          <div className="p-6 pb-4 border-b bg-white">
+            <DialogHeader>
+              <DialogTitle>Ajouter un aliment</DialogTitle>
+            </DialogHeader>
           </div>
-          {isLoading && (
-            <div className="flex items-center justify-center gap-2 text-slate-500 py-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Recherche du produit...
+          
+          <div className="overflow-y-auto p-6 pt-4 flex-1 space-y-6">
+            <div className="space-y-2">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scanner ou Saisir</h4>
+              <Scanner 
+                isOpen={isScannerOpen} 
+                onScanSuccess={handleScanSuccess} 
+              />
             </div>
-          )}
+
+            {productHistory.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Historique récent</h4>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 text-[10px] text-slate-400 hover:text-red-500"
+                    onClick={() => setProductHistory([])}
+                  >
+                    Effacer
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {productHistory.slice(0, 10).map((product) => (
+                    <button
+                      key={product.id}
+                      onClick={() => addHistoryProductToMeal(product)}
+                      className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors border border-slate-100 text-left group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : (
+                          <Apple className="w-4 h-4 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">{product.name}</p>
+                        <p className="text-[9px] text-slate-400 font-medium">
+                          {product.kcalPer100g} kcal • {product.quantityGrams}g
+                        </p>
+                      </div>
+                      <Plus className="w-3 h-3 text-slate-300 group-hover:text-orange-500" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {isLoading && (
+              <div className="flex items-center justify-center gap-2 text-slate-500 py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Recherche du produit...
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
