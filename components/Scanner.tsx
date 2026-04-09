@@ -19,54 +19,46 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
       scannerRef.current = html5QrCode;
 
       const config = {
-        fps: 20, // Augmenté pour plus de réactivité sur iOS
+        fps: 15, // Un peu moins pour laisser du CPU au décodage
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // Zone de scan rectangulaire plus adaptée à l'EAN-13 (plus large que haute)
-          const width = viewfinderWidth * 0.8;
-          const height = viewfinderHeight * 0.4;
-          return { width, height };
+          // Zone de scan plus robuste
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const size = Math.floor(minEdge * 0.7);
+          return { width: size, height: Math.floor(size * 0.6) };
         },
-        aspectRatio: 1.777778, // 16:9
+        aspectRatio: 1.777778,
         videoConstraints: {
           facingMode: "environment",
-          width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 480, ideal: 720, max: 1080 },
         },
-        // Optimisations spécifiques pour le décodage
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.QR_CODE
-        ],
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true
-        }
+        // On laisse la bibliothèque choisir les meilleurs formats par défaut
+        // mais on garde EAN_13 en priorité si possible
       };
 
-      html5QrCode.start(
-        { facingMode: "environment" },
-        config,
-        (decodedText) => {
-          if (!isProcessingRef.current) {
-            isProcessingRef.current = true;
-            // Stop scanning immediately to prevent multiple triggers
-            html5QrCode.stop().then(() => {
-              onScanSuccess(decodedText);
-            }).catch(err => {
-              console.error("Error stopping after success", err);
-              // Still call success even if stop fails
-              onScanSuccess(decodedText);
-            });
+      // Petit délai pour laisser le DOM se stabiliser
+      const timer = setTimeout(() => {
+        html5QrCode.start(
+          { facingMode: "environment" },
+          config,
+          (decodedText) => {
+            if (!isProcessingRef.current) {
+              isProcessingRef.current = true;
+              html5QrCode.stop().then(() => {
+                onScanSuccess(decodedText);
+              }).catch(() => {
+                onScanSuccess(decodedText);
+              });
+            }
+          },
+          (errorMessage) => {
+            if (onScanError) onScanError(errorMessage);
           }
-        },
-        (errorMessage) => {
-          if (onScanError) onScanError(errorMessage);
-        }
-      ).catch((err) => {
-        console.error("Error starting scanner", err);
-      });
+        ).catch((err) => {
+          console.error("Error starting scanner", err);
+        });
+      }, 300);
 
       return () => {
+        clearTimeout(timer);
         const currentScanner = scannerRef.current;
         if (currentScanner && currentScanner.isScanning) {
           currentScanner.stop()

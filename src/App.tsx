@@ -95,7 +95,7 @@ export default function App() {
         setIsProductModalOpen(true);
         setTempQuantity(product.serving_quantity || 100);
       } else {
-        alert("Produit non trouvé");
+        alert(`Produit non trouvé pour le code : ${barcode}. Vérifiez que le produit existe sur Open Food Facts.`);
       }
     } catch (error) {
       console.error("Scan error:", error);

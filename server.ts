@@ -16,7 +16,11 @@ async function startServer() {
   app.get("/api/food/:barcode", async (req, res) => {
     const { barcode } = req.params;
     try {
-      const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
+      const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`, {
+        headers: {
+          "User-Agent": "CaloTrack - WebApp - Version 1.0"
+        }
+      });
       
       if (!response.ok) {
         return res.status(response.status).json({ status: 0, status_verbose: "Product not found or API error" });
