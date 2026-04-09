@@ -135,12 +135,12 @@ export default function App() {
   const totals = useMemo(() => {
     return meals.reduce((acc, meal) => {
       const mealTotals = meal.products.reduce((mAcc, p) => {
-        const factor = p.quantityGrams / 100;
+        const factor = (p.quantityGrams || 0) / 100;
         return {
-          kcal: mAcc.kcal + p.kcalPer100g * factor,
-          protein: mAcc.protein + p.proteinPer100g * factor,
-          carbs: mAcc.carbs + p.carbsPer100g * factor,
-          fat: mAcc.fat + p.fatPer100g * factor,
+          kcal: mAcc.kcal + (p.kcalPer100g || 0) * factor,
+          protein: mAcc.protein + (p.proteinPer100g || 0) * factor,
+          carbs: mAcc.carbs + (p.carbsPer100g || 0) * factor,
+          fat: mAcc.fat + (p.fatPer100g || 0) * factor,
         };
       }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
       
