@@ -49,7 +49,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Scanner } from "@/components/Scanner";
-import { fetchProductByBarcode, OFFProduct } from "@/services/foodService";
+import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct } from "@/services/foodService";
 
 interface LoggedProduct {
   id: string;
@@ -160,6 +160,7 @@ export default function App() {
 
   const [scannedProduct, setScannedProduct] = useState<OFFProduct | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [tempName, setTempName] = useState("");
   const [tempQuantity, setTempQuantity] = useState(100);
   const [tempKcal, setTempKcal] = useState(0);
   const [tempProtein, setTempProtein] = useState(0);
@@ -167,13 +168,16 @@ export default function App() {
   const [tempFat, setTempFat] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<OFFProduct[]>([]);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   useEffect(() => {
     if (scannedProduct) {
-      setTempKcal(scannedProduct.nutriments["energy-kcal_100g"] || 0);
-      setTempProtein(scannedProduct.nutriments.proteins_100g || 0);
-      setTempCarbs(scannedProduct.nutriments.carbohydrates_100g || 0);
-      setTempFat(scannedProduct.nutriments.fat_100g || 0);
+      setTempName(scannedProduct.product_name || "");
+      setTempKcal(scannedProduct.nutriments?.["energy-kcal_100g"] || 0);
+      setTempProtein(scannedProduct.nutriments?.proteins_100g || 0);
+      setTempCarbs(scannedProduct.nutriments?.carbohydrates_100g || 0);
+      setTempFat(scannedProduct.nutriments?.fat_100g || 0);
     }
   }, [scannedProduct]);
 
@@ -201,21 +205,60 @@ export default function App() {
   const remaining = profile.calorieGoal - totals.kcal;
   const progress = Math.min((totals.kcal / profile.calorieGoal) * 100, 100);
 
-  const handleScanSuccess = useCallback(async (barcode: string) => {
+  const handleScanSuccess = useCallback(async (input: string) => {
     if (isLoading || isProductModalOpen) return;
+    
     setIsLoading(true);
     try {
-      const product = await fetchProductByBarcode(barcode);
-      if (product) {
-        setScannedProduct(product);
+      const result = await fetchNutritionData(input);
+      let finalProduct = null;
+
+      // Traitement si c'est un code-barres (OFF uniquement)
+      if (result.source === 'OFF' && result.data) {
+        finalProduct = result.data;
+      } 
+      // Traitement si c'est du texte (Vérification USDA puis OFF)
+      else if (result.source === 'BOTH') {
+        if (result.usda) {
+          // Extraction des nutriments USDA (IDs standards)
+          const getNutrient = (id: number) => 
+            result.usda.foodNutrients.find((n: any) => n.nutrientId === id)?.value || 0;
+
+          finalProduct = {
+            product_name: result.usda.description,
+            nutriments: {
+              "energy-kcal_100g": getNutrient(1008), // Calories
+              proteins_100g: getNutrient(1003),     // Protéines
+              carbohydrates_100g: getNutrient(1005), // Glucides
+              fat_100g: getNutrient(1004)            // Lipides
+            },
+            image_url: result.off?.image_url || "" // On tente de voler l'image de OFF
+          };
+        } else if (result.off) {
+          finalProduct = result.off;
+        }
+      }
+
+      if (finalProduct) {
+        setScannedProduct(finalProduct as any);
         setIsScannerOpen(false);
         setIsProductModalOpen(true);
-        setTempQuantity(product.serving_quantity || 100);
+        setTempQuantity(100);
       } else {
-        alert(`Produit non trouvé pour le code : ${barcode}. Vérifiez que le produit existe sur Open Food Facts.`);
+        throw new Error("Aucun résultat sur les deux bases");
       }
     } catch (error) {
-      console.error("Scan error:", error);
+      console.error("Erreur de recherche:", error);
+      // Fallback manuel si rien n'est trouvé
+      setTempName(input);
+      setScannedProduct({
+        product_name: input,
+        nutriments: { "energy-kcal_100g": 0, proteins_100g: 0, carbohydrates_100g: 0, fat_100g: 0 },
+        image_url: "",
+        serving_quantity: 100
+      } as any);
+      setIsScannerOpen(false);
+      setIsProductModalOpen(true);
     } finally {
       setIsLoading(false);
     }
@@ -225,7 +268,7 @@ export default function App() {
     if (scannedProduct && activeMealIndex !== null) {
       const newProduct: LoggedProduct = {
         id: Math.random().toString(36).substr(2, 9),
-        name: scannedProduct.product_name || "Produit inconnu",
+        name: tempName || scannedProduct.product_name || "Produit inconnu",
         kcalPer100g: tempKcal,
         proteinPer100g: tempProtein,
         carbsPer100g: tempCarbs,
@@ -366,57 +409,108 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <Card className="bg-[#FF6B00] border-none shadow-xl rounded-[2.5rem] overflow-hidden">
-                <CardContent className="p-7 text-white space-y-5">
-                  <h2 className="text-xl font-bold text-center">Résumé Quotidien</h2>
-                  
-                  <div className="flex justify-around items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-white/20 p-2 rounded-2xl">
-                        <Flame className="w-8 h-8 fill-white text-white" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-medium opacity-90">Calories Consommées:</p>
-                        <p className="text-2xl font-black">{totals.kcal.toFixed(0)} <span className="text-sm font-bold">kcal</span></p>
-                      </div>
+              <Card className="bg-gradient-to-br from-white via-white to-indigo-50/50 border-none shadow-xl rounded-[2.5rem] overflow-hidden relative">
+                {/* Decorative background element */}
+                <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-100/50 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-orange-100/30 rounded-full blur-3xl pointer-events-none" />
+                
+                <CardContent className="p-7 space-y-8 relative z-10">
+                  <div className="flex items-center gap-8">
+                    {/* Circular Progress Chart */}
+                    <div className="relative w-32 h-32 flex-shrink-0">
+                      <svg viewBox="0 0 100 100" className="w-full h-full">
+                        {/* Background Rings */}
+                        <circle cx="50" cy="50" r="45" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
+                        <circle cx="50" cy="50" r="37" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
+                        <circle cx="50" cy="50" r="29" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
+                        <circle cx="50" cy="50" r="18" stroke="#E2E8F0" strokeWidth="10" fill="transparent" strokeOpacity="0.5" />
+
+                        {/* Protéine (Purple) - Outermost */}
+                        <motion.circle
+                          cx="50" cy="50" r="45"
+                          stroke="#C084FC" strokeWidth="6" fill="transparent"
+                          strokeDasharray={2 * Math.PI * 45}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 45 }}
+                          animate={{ strokeDashoffset: (2 * Math.PI * 45) * (1 - Math.min(totals.protein / profile.proteinGoal, 1)) }}
+                          strokeLinecap="round" transform="rotate(-90 50 50)"
+                          transition={{ duration: 1, ease: "easeOut" }}
+                        />
+                        
+                        {/* Graisses (Orange) */}
+                        <motion.circle
+                          cx="50" cy="50" r="37"
+                          stroke="#FDBA74" strokeWidth="6" fill="transparent"
+                          strokeDasharray={2 * Math.PI * 37}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 37 }}
+                          animate={{ strokeDashoffset: (2 * Math.PI * 37) * (1 - Math.min(totals.fat / profile.fatGoal, 1)) }}
+                          strokeLinecap="round" transform="rotate(-90 50 50)"
+                          transition={{ duration: 1, ease: "easeOut", delay: 0.1 }}
+                        />
+
+                        {/* Glucides (Blue) */}
+                        <motion.circle
+                          cx="50" cy="50" r="29"
+                          stroke="#38BDF8" strokeWidth="6" fill="transparent"
+                          strokeDasharray={2 * Math.PI * 29}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 29 }}
+                          animate={{ strokeDashoffset: (2 * Math.PI * 29) * (1 - Math.min(totals.carbs / profile.carbsGoal, 1)) }}
+                          strokeLinecap="round" transform="rotate(-90 50 50)"
+                          transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+                        />
+
+                        {/* Calories (Green) - Innermost & Thickest */}
+                        <motion.circle
+                          cx="50" cy="50" r="18"
+                          stroke="#4ADE80" strokeWidth="10" fill="transparent"
+                          strokeDasharray={2 * Math.PI * 18}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 18 }}
+                          animate={{ strokeDashoffset: (2 * Math.PI * 18) * (1 - Math.min(totals.kcal / profile.calorieGoal, 1)) }}
+                          strokeLinecap="round" transform="rotate(-90 50 50)"
+                          transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
+                        />
+                      </svg>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="bg-white/20 p-2 rounded-2xl">
-                        <Target className="w-8 h-8 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-medium opacity-90">Objectif Quotidien:</p>
-                        <p className="text-2xl font-black">{profile.calorieGoal} <span className="text-sm font-bold">kcal</span></p>
-                      </div>
+
+                    {/* Calorie Text */}
+                    <div className="flex flex-col">
+                      <span className="text-[#4ADE80] font-bold text-lg">Calories</span>
+                      <span className="text-3xl font-black text-slate-900">{totals.kcal.toFixed(0)} kcal</span>
+                      <span className="text-slate-400 text-sm font-medium">{remaining > 0 ? `${remaining.toFixed(0)} kcal restantes` : "Objectif atteint !"}</span>
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="h-3 bg-white/30 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        className="h-full bg-white rounded-full"
-                      />
+                  {/* Macros Grid */}
+                  <div className="grid grid-cols-3 gap-4 pt-2">
+                    <div className="flex flex-col">
+                      <span className="text-[#C084FC] font-bold text-sm">Protéine</span>
+                      <span className="text-xl font-black text-slate-800">{totals.protein.toFixed(0)} g</span>
+                      <span className="text-slate-300 text-xs font-medium">
+                        {Math.max(0, profile.proteinGoal - totals.protein).toFixed(0)} g restantes
+                      </span>
                     </div>
-                    <p className="text-center text-lg font-bold text-yellow-300">
-                      Restant: {remaining.toFixed(0)} kcal
-                    </p>
-                  </div>
-
-                  <div className="flex justify-center items-center gap-8 text-sm font-bold opacity-90">
-                    <p>Aliments: <span className="text-lg">{totals.kcal.toFixed(0)}</span></p>
-                    <div className="w-px h-4 bg-white/30" />
-                    <p>Activités: <span className="text-lg">0</span></p>
+                    <div className="flex flex-col">
+                      <span className="text-[#FDBA74] font-bold text-sm">Graisses</span>
+                      <span className="text-xl font-black text-slate-800">{totals.fat.toFixed(0)} g</span>
+                      <span className="text-slate-300 text-xs font-medium">
+                        {Math.max(0, profile.fatGoal - totals.fat).toFixed(0)} g restantes
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[#38BDF8] font-bold text-sm">Glucides</span>
+                      <span className="text-xl font-black text-slate-800">{totals.carbs.toFixed(0)} g</span>
+                      <span className="text-slate-300 text-xs font-medium">
+                        {Math.max(0, profile.carbsGoal - totals.carbs).toFixed(0)} g restantes
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 pt-2">
-                    <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-2xl h-12 font-bold text-lg shadow-sm">
-                      <Leaf className="w-5 h-5 mr-2 text-green-600" />
+                    <Button className="bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-2xl h-12 font-bold text-base border border-slate-100 shadow-sm">
+                      <Leaf className="w-5 h-5 mr-2 text-green-500" />
                       Nutrition
                     </Button>
-                    <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-2xl h-12 font-bold text-lg shadow-sm">
-                      <BarChart3 className="w-5 h-5 mr-2 text-slate-700" />
+                    <Button className="bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-2xl h-12 font-bold text-base border border-slate-100 shadow-sm">
+                      <BarChart3 className="w-5 h-5 mr-2 text-indigo-500" />
                       Stats
                     </Button>
                   </div>
@@ -704,6 +798,82 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
+      {/* Search Results Dialog */}
+      <Dialog open={isSearchModalOpen} onOpenChange={setIsSearchModalOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
+          <div className="p-6 pb-4 border-b bg-white">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-indigo-500" />
+                Résultats de recherche
+              </DialogTitle>
+            </DialogHeader>
+          </div>
+          
+          <div className="overflow-y-auto p-6 pt-4 flex-1">
+            <div className="grid grid-cols-1 gap-3">
+              {searchResults.map((product) => (
+                <button
+                  key={product.code || Math.random()}
+                  onClick={() => {
+                    setScannedProduct(product);
+                    setIsSearchModalOpen(false);
+                    setIsProductModalOpen(true);
+                    setTempQuantity(product.serving_quantity || 100);
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors text-left group"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
+                    {product.image_url ? (
+                      <img src={product.image_url} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                    ) : (
+                      <Apple className="w-7 h-7 text-slate-300" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">
+                      {product.product_name}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {product.nutriments?.["energy-kcal_100g"]?.toFixed(0) || 0} kcal/100g
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-orange-500" />
+                </button>
+              ))}
+              
+              <div className="pt-4 border-t border-slate-100">
+                <p className="text-xs text-slate-400 text-center mb-3">
+                  Vous ne trouvez pas votre produit ?
+                </p>
+                <Button 
+                  variant="outline" 
+                  className="w-full rounded-2xl border-dashed border-2"
+                  onClick={() => {
+                    // Treat as manual entry
+                    setScannedProduct({
+                      product_name: tempName,
+                      nutriments: {
+                        "energy-kcal_100g": 0,
+                        proteins_100g: 0,
+                        carbohydrates_100g: 0,
+                        fat_100g: 0
+                      },
+                      image_url: "",
+                      serving_quantity: 100
+                    } as any);
+                    setIsSearchModalOpen(false);
+                    setIsProductModalOpen(true);
+                  }}
+                >
+                  Créer manuellement "{tempName}"
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Scanner Dialog */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
@@ -790,7 +960,12 @@ export default function App() {
                   />
                 )}
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-base text-slate-800 leading-tight mb-1">{scannedProduct.product_name}</h3>
+                  <Input 
+                    value={tempName} 
+                    onChange={(e) => setTempName(e.target.value)}
+                    className="font-bold text-base text-slate-800 border-none p-0 h-auto focus-visible:ring-0 mb-1"
+                    placeholder="Nom de l'aliment"
+                  />
                   <div className="flex items-center gap-2">
                     <Input 
                       type="number" 

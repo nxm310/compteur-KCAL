@@ -90,13 +90,13 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
             <Keyboard className="w-12 h-12 mb-4 text-indigo-400" />
             <form onSubmit={handleManualSubmit} className="w-full space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Code-barres (13 chiffres)</label>
+                <label className="text-sm font-medium text-slate-300">Nom ou Code-barres</label>
                 <Input 
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
-                  placeholder="Ex: 3017620422003"
+                  placeholder="Ex: Pomme ou 301762..."
                   className="bg-white text-black"
-                  type="number"
+                  type="text"
                   autoFocus
                 />
               </div>
