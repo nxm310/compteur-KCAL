@@ -322,76 +322,81 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
       {/* Header */}
-      <header className="px-6 pt-6 pb-4 flex flex-col items-center relative bg-white border-b border-slate-100">
+      <header className="px-6 pt-8 pb-6 flex flex-col items-center relative bg-white border-b border-slate-100">
         <div className="w-full flex justify-between items-center">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-full"
-            onClick={() => setView(view === "dashboard" ? "profile" : "dashboard")}
-          >
-            {view === "dashboard" ? <Menu className="w-6 h-6" /> : <ArrowLeft className="w-6 h-6" />}
-          </Button>
-          <div className="text-center">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              {view === "dashboard" ? "Tableau de Bord Calories" : "Profil & Objectifs"}
-            </h1>
-            {view === "dashboard" && (
-              <p className="text-sm font-medium text-slate-500">
-                {format(currentDate, "d MMMM yyyy", { locale: fr })}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            {view === "dashboard" && (
+          <div className="flex items-center">
+            {view === "dashboard" ? (
+              <Button 
+                variant="secondary" 
+                size="icon" 
+                className="rounded-2xl w-10 h-10 bg-slate-50 border border-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-all"
+                onClick={() => setIsHistoryOpen(true)}
+              >
+                <History className="w-5 h-5" />
+              </Button>
+            ) : (
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="rounded-full text-slate-600"
-                onClick={() => setIsHistoryOpen(true)}
+                className="rounded-full"
+                onClick={() => setView("dashboard")}
               >
-                <History className="w-6 h-6" />
+                <ArrowLeft className="w-6 h-6" />
               </Button>
             )}
+          </div>
+
+          <div className="text-center">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">
+              {view === "dashboard" ? "Tableau de Bord" : "Profil & Objectifs"}
+            </h1>
+            {view === "dashboard" && (
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 rounded-full text-slate-300 hover:text-orange-500 hover:bg-orange-50 transition-all"
+                  onClick={() => setCurrentDate(subDays(currentDate, 1))}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                
+                <button 
+                  className="text-xs font-bold text-slate-400 hover:text-orange-600 transition-colors flex items-center gap-1.5 bg-slate-50 px-3 py-1 rounded-full border border-slate-100"
+                  onClick={() => setIsDatePickerOpen(true)}
+                >
+                  <CalendarIcon className="w-3 h-3" />
+                  {format(currentDate, "d MMMM yyyy", { locale: fr })}
+                </button>
+
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 rounded-full text-slate-300 hover:text-orange-500 hover:bg-orange-50 transition-all"
+                  onClick={() => setCurrentDate(addDays(currentDate, 1))}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center">
             <Button 
-              variant="ghost" 
+              variant="secondary" 
               size="icon" 
-              className={cn("rounded-full", view === "profile" && "bg-slate-100")}
-              onClick={() => setView("profile")}
+              className={cn(
+                "rounded-2xl w-10 h-10 transition-all border",
+                view === "profile" 
+                  ? "bg-indigo-500 text-white border-indigo-600 shadow-lg shadow-indigo-200" 
+                  : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+              )}
+              onClick={() => setView(view === "profile" ? "dashboard" : "profile")}
             >
-              <User className="w-7 h-7" />
+              <User className="w-5 h-5" />
             </Button>
           </div>
         </div>
-
-        {view === "dashboard" && (
-          <div className="mt-4 flex items-center gap-4 bg-slate-50 px-4 py-1.5 rounded-2xl border border-slate-100">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-7 w-7 rounded-lg"
-              onClick={() => setCurrentDate(subDays(currentDate, 1))}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            
-            <button 
-              className="text-xs font-bold text-slate-600 hover:text-orange-600 transition-colors"
-              onClick={() => setIsDatePickerOpen(true)}
-            >
-              Changer la date
-            </button>
-
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 rounded-lg"
-              onClick={() => setCurrentDate(addDays(currentDate, 1))}
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </div>
-        )}
       </header>
 
       <AnimatePresence mode="wait">
