@@ -81,8 +81,15 @@ async function startServer() {
         return res.status(response.status).json({ foods: [] });
       }
 
-      const data = await response.json();
-      res.json(data);
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const data = await response.json();
+        res.json(data);
+      } else {
+        const text = await response.text();
+        console.error("Non-JSON response from USDA:", text.substring(0, 100));
+        res.status(502).json({ foods: [] });
+      }
     } catch (error) {
       console.error("USDA proxy error:", error);
       res.status(500).json({ foods: [] });

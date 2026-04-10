@@ -49,7 +49,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Scanner } from "@/components/Scanner";
-import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct } from "@/services/foodService";
+import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct, UnifiedProduct } from "@/services/foodService";
 
 interface LoggedProduct {
   id: string;
@@ -158,7 +158,7 @@ export default function App() {
     localStorage.setItem("calo_history_v2", JSON.stringify(productHistory));
   }, [productHistory]);
 
-  const [scannedProduct, setScannedProduct] = useState<OFFProduct | null>(null);
+  const [scannedProduct, setScannedProduct] = useState<UnifiedProduct | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [tempName, setTempName] = useState("");
   const [tempQuantity, setTempQuantity] = useState(100);
@@ -168,16 +168,16 @@ export default function App() {
   const [tempFat, setTempFat] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [searchResults, setSearchResults] = useState<OFFProduct[]>([]);
+  const [searchResults, setSearchResults] = useState<UnifiedProduct[]>([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   useEffect(() => {
     if (scannedProduct) {
-      setTempName(scannedProduct.product_name || "");
-      setTempKcal(scannedProduct.nutriments?.["energy-kcal_100g"] || 0);
-      setTempProtein(scannedProduct.nutriments?.proteins_100g || 0);
-      setTempCarbs(scannedProduct.nutriments?.carbohydrates_100g || 0);
-      setTempFat(scannedProduct.nutriments?.fat_100g || 0);
+      setTempName(scannedProduct.name || "");
+      setTempKcal(scannedProduct.kcalPer100g || 0);
+      setTempProtein(scannedProduct.proteinsPer100g || 0);
+      setTempCarbs(scannedProduct.carbsPer100g || 0);
+      setTempFat(scannedProduct.fatPer100g || 0);
     }
   }, [scannedProduct]);
 
@@ -211,52 +211,52 @@ export default function App() {
     setIsLoading(true);
     try {
       const result = await fetchNutritionData(input);
-      let finalProduct = null;
-
-      // Traitement si c'est un code-barres (OFF uniquement)
-      if (result.source === 'OFF' && result.data) {
-        finalProduct = result.data;
-      } 
-      // Traitement si c'est du texte (Vérification USDA puis OFF)
-      else if (result.source === 'BOTH') {
-        if (result.usda) {
-          // Extraction des nutriments USDA (IDs standards)
-          const getNutrient = (id: number) => 
-            result.usda.foodNutrients.find((n: any) => n.nutrientId === id)?.value || 0;
-
-          finalProduct = {
-            product_name: result.usda.description,
-            nutriments: {
-              "energy-kcal_100g": getNutrient(1008), // Calories
-              proteins_100g: getNutrient(1003),     // Protéines
-              carbohydrates_100g: getNutrient(1005), // Glucides
-              fat_100g: getNutrient(1004)            // Lipides
-            },
-            image_url: result.off?.image_url || "" // On tente de voler l'image de OFF
-          };
-        } else if (result.off) {
-          finalProduct = result.off;
+      
+      if (result.products && result.products.length > 0) {
+        if (result.products.length === 1) {
+          // Un seul résultat (souvent le cas pour un code-barres)
+          setScannedProduct(result.products[0]);
+          setIsScannerOpen(false);
+          setIsProductModalOpen(true);
+          setTempQuantity(result.products[0].servingQuantity || 100);
+        } else {
+          // Plusieurs résultats (recherche par texte)
+          setSearchResults(result.products);
+          setIsScannerOpen(false);
+          setIsSearchModalOpen(true);
         }
-      }
-
-      if (finalProduct) {
-        setScannedProduct(finalProduct as any);
+      } else {
+        // Fallback manuel si rien n'est trouvé (sans erreur bloquante)
+        setTempName(input);
+        setScannedProduct({
+          id: Math.random().toString(),
+          name: input,
+          kcalPer100g: 0,
+          proteinsPer100g: 0,
+          carbsPer100g: 0,
+          fatPer100g: 0,
+          imageUrl: "",
+          source: 'OFF',
+          servingQuantity: 100
+        });
         setIsScannerOpen(false);
         setIsProductModalOpen(true);
-        setTempQuantity(100);
-      } else {
-        throw new Error("Aucun résultat sur les deux bases");
       }
     } catch (error) {
-      console.error("Erreur de recherche:", error);
-      // Fallback manuel si rien n'est trouvé
+      console.error("Erreur technique de recherche:", error);
+      // Fallback en cas d'erreur réseau/API
       setTempName(input);
       setScannedProduct({
-        product_name: input,
-        nutriments: { "energy-kcal_100g": 0, proteins_100g: 0, carbohydrates_100g: 0, fat_100g: 0 },
-        image_url: "",
-        serving_quantity: 100
-      } as any);
+        id: Math.random().toString(),
+        name: input,
+        kcalPer100g: 0,
+        proteinsPer100g: 0,
+        carbsPer100g: 0,
+        fatPer100g: 0,
+        imageUrl: "",
+        source: 'OFF',
+        servingQuantity: 100
+      });
       setIsScannerOpen(false);
       setIsProductModalOpen(true);
     } finally {
@@ -268,13 +268,13 @@ export default function App() {
     if (scannedProduct && activeMealIndex !== null) {
       const newProduct: LoggedProduct = {
         id: Math.random().toString(36).substr(2, 9),
-        name: tempName || scannedProduct.product_name || "Produit inconnu",
+        name: tempName || scannedProduct.name || "Produit inconnu",
         kcalPer100g: tempKcal,
         proteinPer100g: tempProtein,
         carbsPer100g: tempCarbs,
         fatPer100g: tempFat,
         quantityGrams: tempQuantity,
-        imageUrl: scannedProduct.image_url,
+        imageUrl: scannedProduct.imageUrl,
       };
 
       const updatedMeals = [...meals];
@@ -814,28 +814,36 @@ export default function App() {
             <div className="grid grid-cols-1 gap-3">
               {searchResults.map((product) => (
                 <button
-                  key={product.code || Math.random()}
+                  key={product.id || Math.random()}
                   onClick={() => {
                     setScannedProduct(product);
                     setIsSearchModalOpen(false);
                     setIsProductModalOpen(true);
-                    setTempQuantity(product.serving_quantity || 100);
+                    setTempQuantity(product.servingQuantity || 100);
                   }}
                   className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors text-left group"
                 >
                   <div className="w-14 h-14 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
-                    {product.image_url ? (
-                      <img src={product.image_url} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                    {product.imageUrl ? (
+                      <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                     ) : (
                       <Apple className="w-7 h-7 text-slate-300" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">
-                      {product.product_name}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">
+                        {product.name}
+                      </p>
+                      <span className={cn(
+                        "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase",
+                        product.source === 'USDA' ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
+                      )}>
+                        {product.source}
+                      </span>
+                    </div>
                     <p className="text-[10px] text-slate-400 font-medium">
-                      {product.nutriments?.["energy-kcal_100g"]?.toFixed(0) || 0} kcal/100g
+                      {product.kcalPer100g?.toFixed(0) || 0} kcal/100g
                     </p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-orange-500" />
@@ -852,16 +860,16 @@ export default function App() {
                   onClick={() => {
                     // Treat as manual entry
                     setScannedProduct({
-                      product_name: tempName,
-                      nutriments: {
-                        "energy-kcal_100g": 0,
-                        proteins_100g: 0,
-                        carbohydrates_100g: 0,
-                        fat_100g: 0
-                      },
-                      image_url: "",
-                      serving_quantity: 100
-                    } as any);
+                      id: Math.random().toString(),
+                      name: tempName,
+                      kcalPer100g: 0,
+                      proteinsPer100g: 0,
+                      carbsPer100g: 0,
+                      fatPer100g: 0,
+                      imageUrl: "",
+                      source: 'OFF',
+                      servingQuantity: 100
+                    });
                     setIsSearchModalOpen(false);
                     setIsProductModalOpen(true);
                   }}
