@@ -17,6 +17,7 @@ import {
   Sun, 
   Moon, 
   Apple, 
+  Croissant,
   Plus, 
   Footprints,
   Scan,
@@ -101,11 +102,12 @@ const DEFAULT_PROFILE: UserProfile = {
 const ICON_MAP: Record<string, any> = {
   Sun,
   Moon,
-  Apple
+  Apple,
+  Croissant
 };
 
 const INITIAL_MEALS = [
-  { title: "Petit-déj", icon: "Sun", color: "text-yellow-500", products: [] },
+  { title: "Petit-déj", icon: "Croissant", color: "text-orange-500", products: [] },
   { title: "Déjeuner", icon: "Sun", color: "text-yellow-500", products: [] },
   { title: "Dîner", icon: "Moon", color: "text-indigo-500", products: [] },
   { title: "En-cas", icon: "Apple", color: "text-red-500", products: [] },
@@ -127,7 +129,20 @@ export default function App() {
   const [mealsByDate, setMealsByDate] = useState<Record<string, MealState[]>>(() => {
     try {
       const saved = localStorage.getItem("calo_meals_v2");
-      return saved ? JSON.parse(saved) : {};
+      if (!saved) return {};
+      const parsed = JSON.parse(saved);
+      
+      // Migration: Update breakfast icon from Sun to Croissant
+      Object.keys(parsed).forEach(date => {
+        parsed[date] = parsed[date].map((meal: any) => {
+          if (meal.title === "Petit-déj" && meal.icon === "Sun") {
+            return { ...meal, icon: "Croissant", color: "text-orange-500" };
+          }
+          return meal;
+        });
+      });
+      
+      return parsed;
     } catch (e) {
       console.error("Error parsing meals:", e);
       return {};
@@ -365,6 +380,10 @@ export default function App() {
       setMeals(updatedMeals);
       setIsScannerOpen(false);
     }
+  };
+
+  const removeFromHistory = (productId: string) => {
+    setProductHistory(prev => prev.filter(p => p.id !== productId));
   };
 
   const addActivity = () => {
@@ -637,18 +656,6 @@ export default function App() {
                           </p>
                           <p className="text-sm font-bold text-slate-400">{meal.products.length} Food(s)</p>
                         </div>
-                        <Button 
-                          size="icon" 
-                          variant="secondary" 
-                          className="absolute bottom-4 right-4 w-10 h-10 rounded-2xl bg-slate-400 text-white hover:bg-orange-500 transition-colors shadow-md"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveMealIndex(index);
-                            setIsScannerOpen(true);
-                          }}
-                        >
-                          <Plus className="w-6 h-6" />
-                        </Button>
                       </CardContent>
                     </Card>
                   </motion.div>
@@ -664,6 +671,11 @@ export default function App() {
             >
               <Card className="bg-[#007AFF] border-none shadow-xl rounded-[2rem] overflow-hidden">
                 <CardContent className="p-6 text-white">
+                  <div className="text-center mb-4">
+                    <p className="text-xs font-bold bg-white/10 py-1 px-3 rounded-full inline-block">
+                      Une Barre Mars et hop 250 Kcal 😉
+                    </p>
+                  </div>
                   <div className="flex items-center gap-3 mb-4">
                     <div className="bg-white/20 p-2 rounded-xl">
                       <Footprints className="w-6 h-6 text-white" />
@@ -807,30 +819,40 @@ export default function App() {
                           {product.kcalPer100g} kcal/100g • {product.quantityGrams}g
                         </p>
                       </div>
-                      <div className="flex flex-col gap-1">
-                        <p className="text-[10px] font-bold text-slate-400 text-center mb-1">Ajouter à :</p>
-                        <div className="flex gap-1">
-                          {meals.map((meal, idx) => (
-                            <Button
-                              key={idx}
-                              size="icon"
-                              variant="secondary"
-                              className="w-7 h-7 rounded-lg bg-white hover:bg-orange-500 hover:text-white transition-colors"
-                              onClick={() => {
-                                const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
-                                const updatedMeals = [...meals];
-                                updatedMeals[idx].products.push(newProduct);
-                                setMeals(updatedMeals);
-                                setIsHistoryOpen(false);
-                              }}
-                            >
-                              {(() => {
-                                const Icon = ICON_MAP[meal.icon] || Apple;
-                                return <Icon className="w-3 h-3" />;
-                              })()}
-                            </Button>
-                          ))}
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-1">
+                          <p className="text-[8px] font-bold text-slate-400 text-center">Ajouter à :</p>
+                          <div className="flex gap-1">
+                            {meals.map((meal, idx) => (
+                              <Button
+                                key={idx}
+                                size="icon"
+                                variant="secondary"
+                                className="w-7 h-7 rounded-lg bg-white hover:bg-orange-500 hover:text-white transition-colors"
+                                onClick={() => {
+                                  const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
+                                  const updatedMeals = [...meals];
+                                  updatedMeals[idx].products.push(newProduct);
+                                  setMeals(updatedMeals);
+                                  setIsHistoryOpen(false);
+                                }}
+                              >
+                                {(() => {
+                                  const Icon = ICON_MAP[meal.icon] || Apple;
+                                  return <Icon className="w-3 h-3" />;
+                                })()}
+                              </Button>
+                            ))}
+                          </div>
                         </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="w-8 h-8 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                          onClick={() => removeFromHistory(product.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -1174,99 +1196,156 @@ export default function App() {
                 </DialogHeader>
               </div>
               
-              <ScrollArea className="flex-1 p-6">
-                {meals[selectedMealForView].products.length === 0 ? (
-                  <div className="text-center py-10 text-slate-400">
-                    Aucun aliment ajouté pour ce repas.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {meals[selectedMealForView].products.map((product) => (
-                      <div key={product.id} className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border">
-                        {product.imageUrl && (
-                          <img 
-                            src={product.imageUrl} 
-                            alt={product.name} 
-                            className="w-12 h-12 object-contain rounded-lg bg-slate-50"
-                            referrerPolicy="no-referrer"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-start">
-                            <h4 className="font-bold text-sm truncate">{product.name}</h4>
-                            <span className="text-xs font-bold text-orange-600 ml-2">
-                              {((product.kcalPer100g * product.quantityGrams) / 100).toFixed(0)} kcal
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center gap-2 mt-1">
-                            <Input 
-                              type="number" 
-                              value={product.quantityGrams} 
-                              onChange={(e) => updateProductDetail(selectedMealForView, product.id, "quantityGrams", Number(e.target.value))}
-                              className="h-7 w-16 text-xs px-1 rounded-md"
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* Current Meal Products */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aliments consommés</h4>
+                  {meals[selectedMealForView].products.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 bg-slate-50 rounded-2xl border border-dashed">
+                      Aucun aliment ajouté.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {meals[selectedMealForView].products.map((product) => (
+                        <div key={product.id} className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border">
+                          {product.imageUrl && (
+                            <img 
+                              src={product.imageUrl} 
+                              alt={product.name} 
+                              className="w-12 h-12 object-contain rounded-lg bg-slate-50"
+                              referrerPolicy="no-referrer"
                             />
-                            <span className="text-[10px] text-slate-400 font-medium">g</span>
-                          </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-bold text-sm truncate">{product.name}</h4>
+                              <span className="text-xs font-bold text-orange-600 ml-2">
+                                {((product.kcalPer100g * product.quantityGrams) / 100).toFixed(0)} kcal
+                              </span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2 mt-1">
+                              <Input 
+                                type="number" 
+                                value={product.quantityGrams} 
+                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "quantityGrams", Number(e.target.value))}
+                                className="h-7 w-16 text-xs px-1 rounded-md"
+                              />
+                              <span className="text-[10px] text-slate-400 font-medium">g</span>
+                            </div>
 
-                          <div className="grid grid-cols-3 gap-1 mt-2">
-                            <div className="space-y-1">
-                              <div className="text-[8px] text-blue-600 font-bold">Prot (100g)</div>
-                              <Input 
-                                type="number" 
-                                value={product.proteinPer100g} 
-                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "proteinPer100g", Number(e.target.value))}
-                                className="h-6 text-[10px] px-1 rounded-md"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <div className="text-[8px] text-yellow-700 font-bold">Gluc (100g)</div>
-                              <Input 
-                                type="number" 
-                                value={product.carbsPer100g} 
-                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "carbsPer100g", Number(e.target.value))}
-                                className="h-6 text-[10px] px-1 rounded-md"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <div className="text-[8px] text-red-600 font-bold">Lip (100g)</div>
-                              <Input 
-                                type="number" 
-                                value={product.fatPer100g} 
-                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "fatPer100g", Number(e.target.value))}
-                                className="h-6 text-[10px] px-1 rounded-md"
-                              />
+                            <div className="grid grid-cols-3 gap-1 mt-2">
+                              <div className="space-y-1">
+                                <div className="text-[8px] text-blue-600 font-bold">Prot (100g)</div>
+                                <Input 
+                                  type="number" 
+                                  value={product.proteinPer100g} 
+                                  onChange={(e) => updateProductDetail(selectedMealForView, product.id, "proteinPer100g", Number(e.target.value))}
+                                  className="h-6 text-[10px] px-1 rounded-md"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="text-[8px] text-yellow-700 font-bold">Gluc (100g)</div>
+                                <Input 
+                                  type="number" 
+                                  value={product.carbsPer100g} 
+                                  onChange={(e) => updateProductDetail(selectedMealForView, product.id, "carbsPer100g", Number(e.target.value))}
+                                  className="h-6 text-[10px] px-1 rounded-md"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="text-[8px] text-red-600 font-bold">Lip (100g)</div>
+                                <Input 
+                                  type="number" 
+                                  value={product.fatPer100g} 
+                                  onChange={(e) => updateProductDetail(selectedMealForView, product.id, "fatPer100g", Number(e.target.value))}
+                                  className="h-6 text-[10px] px-1 rounded-md"
+                                />
+                              </div>
                             </div>
                           </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-slate-300 hover:text-red-500 h-8 w-8"
+                            onClick={() => removeProduct(selectedMealForView, product.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-                          <div className="grid grid-cols-3 gap-1 mt-2 border-t pt-1">
-                            <div className="text-[9px] text-blue-600 flex justify-between">
-                              <span>Total:</span>
-                              <span className="font-bold">{((product.proteinPer100g * product.quantityGrams) / 100).toFixed(1)}g</span>
-                            </div>
-                            <div className="text-[9px] text-yellow-700 flex justify-between">
-                              <span>Total:</span>
-                              <span className="font-bold">{((product.carbsPer100g * product.quantityGrams) / 100).toFixed(1)}g</span>
-                            </div>
-                            <div className="text-[9px] text-red-600 flex justify-between">
-                              <span>Total:</span>
-                              <span className="font-bold">{((product.fatPer100g * product.quantityGrams) / 100).toFixed(1)}g</span>
-                            </div>
+                {/* History Section Integrated */}
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Historique / Favoris</h4>
+                    {productHistory.length > 0 && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 text-[10px] text-slate-400 hover:text-red-500"
+                        onClick={() => setProductHistory([])}
+                      >
+                        Vider
+                      </Button>
+                    )}
+                  </div>
+                  
+                  {productHistory.length === 0 ? (
+                    <p className="text-[10px] text-slate-400 text-center py-4">Votre historique est vide.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                      {productHistory.map((product) => (
+                        <div
+                          key={product.id}
+                          className="flex items-center gap-3 p-2 rounded-xl bg-slate-50 border border-slate-100 group"
+                        >
+                          <div className="w-10 h-10 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
+                            {product.imageUrl ? (
+                              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                            ) : (
+                              <Apple className="w-5 h-5 text-slate-300" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-slate-700 truncate">{product.name}</p>
+                            <p className="text-[9px] text-slate-400">
+                              {product.kcalPer100g} kcal/100g
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-7 px-2 rounded-lg bg-white hover:bg-orange-500 hover:text-white text-[10px] font-bold transition-colors"
+                              onClick={() => {
+                                const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
+                                const updatedMeals = [...meals];
+                                updatedMeals[selectedMealForView].products.push(newProduct);
+                                setMeals(updatedMeals);
+                              }}
+                            >
+                              <Plus className="w-3 h-3 mr-1" />
+                              Ajouter
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="w-7 h-7 rounded-full text-slate-300 hover:text-red-500"
+                              onClick={() => removeFromHistory(product.id)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
                           </div>
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="text-slate-300 hover:text-red-500 h-8 w-8"
-                          onClick={() => removeProduct(selectedMealForView, product.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <div className="p-6 border-t bg-slate-50">
                 <Button 
