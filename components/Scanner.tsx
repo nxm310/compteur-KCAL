@@ -19,6 +19,7 @@ interface ScannerProps {
 
 export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const isProcessingRef = useRef(false);
@@ -28,18 +29,43 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
   const [scannerReady, setScannerReady] = useState(false);
 
   const stopScanner = useCallback(() => {
+    // 1. Arrêter les contrôles ZXing
     if (controlsRef.current) {
       try {
         controlsRef.current.stop();
-      } catch (_) {}
+      } catch (e) {
+        console.warn("Error stopping zxing controls:", e);
+      }
       controlsRef.current = null;
     }
-    // Libérer le flux caméra manuellement pour iOS
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
+
+    // 2. Arrêter le flux média manuellement (Crucial pour iOS)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        track.enabled = false;
+      });
+      streamRef.current = null;
     }
+
+    // 3. Nettoyer l'élément vidéo
+    if (videoRef.current) {
+      const video = videoRef.current;
+      video.pause();
+      video.srcObject = null;
+      video.removeAttribute("src");
+      video.load();
+    }
+
+    // 4. Reset le reader
+    if (readerRef.current) {
+      try {
+        // @ts-ignore - reset exists on BrowserCodeReader
+        readerRef.current.reset();
+      } catch (e) {}
+      readerRef.current = null;
+    }
+    
     setScannerReady(false);
   }, []);
 
@@ -51,67 +77,63 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
 
     isProcessingRef.current = false;
 
-    // Hints ZXing : formats + mode "essayer plus fort"
-    const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.CODE_128,
-    ]);
-    hints.set(DecodeHintType.TRY_HARDER, true);
+    const startCamera = async () => {
+      try {
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.CODE_128,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
 
-    const reader = new BrowserMultiFormatReader(hints, {
-      delayBetweenScanAttempts: 80, // ~12fps, bon équilibre perf/batterie
-    });
-    readerRef.current = reader;
+        const reader = new BrowserMultiFormatReader(hints, {
+          delayBetweenScanAttempts: 100,
+        });
+        readerRef.current = reader;
 
-    const constraints: MediaStreamConstraints = {
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { min: 640, ideal: 1280, max: 1920 },
-        height: { min: 480, ideal: 720, max: 1080 },
-        // focusMode 'continuous' est la clé pour iOS
-        // @ts-ignore — non standard mais supporté sur iOS 17+
-        focusMode: 'continuous',
-        // Évite le flicker sur iPhone en forçant l'exposition auto
-        // @ts-ignore
-        exposureMode: 'continuous',
-      },
+        const constraints: MediaStreamConstraints = {
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { min: 640, ideal: 1280 },
+            height: { min: 480, ideal: 720 },
+          },
+        };
+
+        // On demande le flux nous-mêmes pour avoir un contrôle total
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          // On attend que la vidéo soit prête
+          await videoRef.current.play();
+          
+          setScannerReady(true);
+
+          // On lance le décodage sur l'élément vidéo
+          const controls = await reader.decodeFromVideoElement(videoRef.current, (result, error) => {
+            if (result && !isProcessingRef.current) {
+              isProcessingRef.current = true;
+              // On arrête TOUT avant de notifier le succès
+              stopScanner();
+              onScanSuccess(result.getText());
+            }
+            if (error && !(error instanceof NotFoundException)) {
+              if (onScanError) onScanError(error.message);
+            }
+          });
+          controlsRef.current = controls;
+        }
+      } catch (err: any) {
+        console.error('Scanner start error:', err);
+        if (onScanError) onScanError(err.message ?? 'Impossible de démarrer la caméra');
+      }
     };
 
-    let cancelled = false;
-
-    reader
-      .decodeFromConstraints(constraints, videoRef.current!, (result, error, controls) => {
-        if (cancelled) return;
-
-        // Enregistrer les controls dès le premier appel (succès ou erreur)
-        if (controls && !controlsRef.current) {
-          controlsRef.current = controls;
-          setScannerReady(true);
-        }
-
-        if (result && !isProcessingRef.current) {
-          isProcessingRef.current = true;
-          stopScanner();
-          onScanSuccess(result.getText());
-          return;
-        }
-
-        if (error && !(error instanceof NotFoundException)) {
-          // NotFoundException = "pas encore de code dans le champ" — c'est normal, on ignore
-          if (onScanError) onScanError(error.message);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          console.error('ZXing start error:', err);
-          if (onScanError) onScanError(err.message ?? 'Impossible de démarrer la caméra');
-        }
-      });
+    startCamera();
 
     return () => {
-      cancelled = true;
       stopScanner();
     };
   }, [isOpen, showManual, onScanSuccess, onScanError, stopScanner]);

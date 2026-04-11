@@ -1397,54 +1397,24 @@ export default function App() {
           
           <div className="space-y-6 py-4">
             <div className="space-y-2">
-              <Label className="text-sm font-bold text-slate-500">Activité</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { name: "Vélo", icon: Bike },
-                  { name: "Marche travail", icon: Footprints },
-                  { name: "Tapis de marche", icon: Timer },
-                  { name: "Musculation", icon: Dumbbell },
-                  { name: "Yoga", icon: Wind }
-                ].map((act) => (
-                  <Button
-                    key={act.name}
-                    variant="outline"
-                    className={cn(
-                      "justify-start gap-2 rounded-xl h-12",
-                      tempActivityName === act.name && "border-blue-500 bg-blue-50 text-blue-600"
-                    )}
-                    onClick={() => setTempActivityName(act.name)}
-                  >
-                    <act.icon className="w-4 h-4" />
-                    <span className="text-xs">{act.name}</span>
-                  </Button>
-                ))}
-              </div>
-              <div className="pt-2">
-                <Input 
-                  placeholder="Ou entrez une activité personnalisée..."
-                  value={tempActivityName}
-                  onChange={(e) => setTempActivityName(e.target.value)}
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <Label className="text-sm font-bold text-slate-500">Calories brûlées (kcal)</Label>
               <Input 
                 type="number"
                 placeholder="0"
                 value={tempActivityKcal || ""}
-                onChange={(e) => setTempActivityKcal(Number(e.target.value))}
+                onChange={(e) => {
+                  setTempActivityKcal(Number(e.target.value));
+                  if (!tempActivityName) setTempActivityName("Exercice");
+                }}
                 className="rounded-xl text-lg font-bold"
+                autoFocus
               />
             </div>
 
             <Button 
               className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-blue-200"
               onClick={addActivity}
-              disabled={!tempActivityName || tempActivityKcal <= 0}
+              disabled={tempActivityKcal <= 0}
             >
               Enregistrer l'activité
             </Button>
