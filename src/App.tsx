@@ -830,10 +830,20 @@ export default function App() {
                                 variant="secondary"
                                 className="w-7 h-7 rounded-lg bg-white hover:bg-orange-500 hover:text-white transition-colors"
                                 onClick={() => {
-                                  const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
-                                  const updatedMeals = [...meals];
-                                  updatedMeals[idx].products.push(newProduct);
-                                  setMeals(updatedMeals);
+                                  setScannedProduct({
+                                    id: product.id,
+                                    name: product.name,
+                                    kcalPer100g: product.kcalPer100g,
+                                    proteinsPer100g: product.proteinPer100g,
+                                    carbsPer100g: product.carbsPer100g,
+                                    fatPer100g: product.fatPer100g,
+                                    imageUrl: product.imageUrl,
+                                    source: 'OFF',
+                                    servingQuantity: 100
+                                  });
+                                  setTempQuantity(product.quantityGrams || 100);
+                                  setActiveMealIndex(idx);
+                                  setIsProductModalOpen(true);
                                   setIsHistoryOpen(false);
                                 }}
                               >
@@ -1322,10 +1332,20 @@ export default function App() {
                               variant="secondary"
                               className="h-7 px-2 rounded-lg bg-white hover:bg-orange-500 hover:text-white text-[10px] font-bold transition-colors"
                               onClick={() => {
-                                const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
-                                const updatedMeals = [...meals];
-                                updatedMeals[selectedMealForView].products.push(newProduct);
-                                setMeals(updatedMeals);
+                                setScannedProduct({
+                                  id: product.id,
+                                  name: product.name,
+                                  kcalPer100g: product.kcalPer100g,
+                                  proteinsPer100g: product.proteinPer100g,
+                                  carbsPer100g: product.carbsPer100g,
+                                  fatPer100g: product.fatPer100g,
+                                  imageUrl: product.imageUrl,
+                                  source: 'OFF',
+                                  servingQuantity: 100
+                                });
+                                setTempQuantity(product.quantityGrams || 100);
+                                setActiveMealIndex(selectedMealForView);
+                                setIsProductModalOpen(true);
                               }}
                             >
                               <Plus className="w-3 h-3 mr-1" />
