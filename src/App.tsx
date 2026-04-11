@@ -32,7 +32,12 @@ import {
   Dna,
   Droplets,
   Wheat,
-  History
+  History,
+  Bike,
+  Dumbbell,
+  Timer,
+  Activity as ActivityIcon,
+  Wind
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -67,6 +72,12 @@ interface MealState {
   icon: any;
   color: string;
   products: LoggedProduct[];
+}
+
+interface Activity {
+  id: string;
+  name: string;
+  calories: number;
 }
 
 interface UserProfile {
@@ -141,8 +152,34 @@ export default function App() {
     }));
   };
 
+  const [activitiesByDate, setActivitiesByDate] = useState<Record<string, Activity[]>>(() => {
+    try {
+      const saved = localStorage.getItem("calo_activities_v2");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error("Error parsing activities:", e);
+      return {};
+    }
+  });
+
+  const activities = useMemo(() => activitiesByDate[dateKey] || [], [activitiesByDate, dateKey]);
+
+  useEffect(() => {
+    localStorage.setItem("calo_activities_v2", JSON.stringify(activitiesByDate));
+  }, [activitiesByDate]);
+
+  const setActivities = (newActivities: Activity[]) => {
+    setActivitiesByDate(prev => ({
+      ...prev,
+      [dateKey]: newActivities
+    }));
+  };
+
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [tempActivityName, setTempActivityName] = useState("");
+  const [tempActivityKcal, setTempActivityKcal] = useState(0);
   const [activeMealIndex, setActiveMealIndex] = useState<number | null>(null);
   const [productHistory, setProductHistory] = useState<LoggedProduct[]>(() => {
     try {
@@ -202,8 +239,12 @@ export default function App() {
     }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
   }, [meals]);
 
-  const remaining = profile.calorieGoal - totals.kcal;
-  const progress = Math.min((totals.kcal / profile.calorieGoal) * 100, 100);
+  const totalBurned = useMemo(() => {
+    return activities.reduce((acc, act) => acc + act.calories, 0);
+  }, [activities]);
+
+  const remaining = profile.calorieGoal - totals.kcal + totalBurned;
+  const progress = Math.min((totals.kcal / (profile.calorieGoal + totalBurned)) * 100, 100);
 
   const handleScanSuccess = useCallback(async (input: string) => {
     if (isLoading || isProductModalOpen) return;
@@ -292,6 +333,30 @@ export default function App() {
     }
   };
 
+  const addToHistoryOnly = () => {
+    if (scannedProduct) {
+      const newProduct: LoggedProduct = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: tempName || scannedProduct.name || "Produit inconnu",
+        kcalPer100g: tempKcal,
+        proteinPer100g: tempProtein,
+        carbsPer100g: tempCarbs,
+        fatPer100g: tempFat,
+        quantityGrams: tempQuantity,
+        imageUrl: scannedProduct.imageUrl,
+      };
+
+      // Add to history
+      setProductHistory(prev => {
+        const filtered = prev.filter(p => p.name !== newProduct.name);
+        return [newProduct, ...filtered].slice(0, 50); // Keep last 50
+      });
+
+      setIsProductModalOpen(false);
+      setScannedProduct(null);
+    }
+  };
+
   const addHistoryProductToMeal = (product: LoggedProduct) => {
     if (activeMealIndex !== null) {
       const newProduct = { ...product, id: Math.random().toString(36).substr(2, 9) };
@@ -299,6 +364,20 @@ export default function App() {
       updatedMeals[activeMealIndex].products.push(newProduct);
       setMeals(updatedMeals);
       setIsScannerOpen(false);
+    }
+  };
+
+  const addActivity = () => {
+    if (tempActivityName && tempActivityKcal > 0) {
+      const newActivity: Activity = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: tempActivityName,
+        calories: tempActivityKcal
+      };
+      setActivities([...activities, newActivity]);
+      setIsActivityModalOpen(false);
+      setTempActivityName("");
+      setTempActivityKcal(0);
     }
   };
 
@@ -509,15 +588,21 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 pt-2">
-                    <Button className="bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-2xl h-12 font-bold text-base border border-slate-100 shadow-sm">
-                      <Leaf className="w-5 h-5 mr-2 text-green-500" />
-                      Nutrition
-                    </Button>
-                    <Button className="bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-2xl h-12 font-bold text-base border border-slate-100 shadow-sm">
-                      <BarChart3 className="w-5 h-5 mr-2 text-indigo-500" />
-                      Stats
-                    </Button>
+                  <div className="flex items-center justify-between bg-indigo-50/50 p-4 rounded-3xl border border-indigo-100/50">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-indigo-500 p-2 rounded-xl shadow-lg shadow-indigo-200">
+                        <Flame className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Calories Brûlées</span>
+                        <span className="text-xl font-black text-indigo-600">+{totalBurned.toFixed(0)}</span>
+                      </div>
+                    </div>
+                    <div className="h-10 w-[1px] bg-indigo-100" />
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Net</span>
+                      <span className="text-xl font-black text-slate-900">{(totals.kcal - totalBurned).toFixed(0)}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -586,9 +671,12 @@ export default function App() {
                     <h3 className="text-2xl font-bold">Activités</h3>
                   </div>
                   <p className="text-lg font-bold opacity-90 mb-6">
-                    Calories Actives: <span className="text-2xl">0.0</span>
+                    Calories Actives: <span className="text-2xl">{totalBurned.toFixed(0)}</span> kcal
                   </p>
-                  <Button className="w-full bg-white text-[#007AFF] hover:bg-slate-100 rounded-2xl h-14 font-black text-xl shadow-md">
+                  <Button 
+                    className="w-full bg-white text-[#007AFF] hover:bg-slate-100 rounded-2xl h-14 font-black text-xl shadow-md"
+                    onClick={() => setIsActivityModalOpen(true)}
+                  >
                     Ajouter un exercice
                   </Button>
                 </CardContent>
@@ -1052,9 +1140,14 @@ export default function App() {
                 </div>
               </div>
 
-              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-orange-100 transition-all active:scale-[0.98]" onClick={addProductToMeal}>
-                Ajouter au repas
-              </Button>
+              <div className="flex flex-col gap-3">
+                <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-orange-100 transition-all active:scale-[0.98]" onClick={addProductToMeal}>
+                  Ajouter au repas
+                </Button>
+                <Button variant="outline" className="w-full border-slate-200 text-slate-600 rounded-2xl h-12 font-bold transition-all active:scale-[0.98]" onClick={addToHistoryOnly}>
+                  Ajouter à l'historique uniquement
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -1190,6 +1283,73 @@ export default function App() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Activity Modal */}
+      <Dialog open={isActivityModalOpen} onOpenChange={setIsActivityModalOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ActivityIcon className="w-5 h-5 text-blue-500" />
+              Ajouter un exercice
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-slate-500">Activité</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { name: "Vélo", icon: Bike },
+                  { name: "Marche travail", icon: Footprints },
+                  { name: "Tapis de marche", icon: Timer },
+                  { name: "Musculation", icon: Dumbbell },
+                  { name: "Yoga", icon: Wind }
+                ].map((act) => (
+                  <Button
+                    key={act.name}
+                    variant="outline"
+                    className={cn(
+                      "justify-start gap-2 rounded-xl h-12",
+                      tempActivityName === act.name && "border-blue-500 bg-blue-50 text-blue-600"
+                    )}
+                    onClick={() => setTempActivityName(act.name)}
+                  >
+                    <act.icon className="w-4 h-4" />
+                    <span className="text-xs">{act.name}</span>
+                  </Button>
+                ))}
+              </div>
+              <div className="pt-2">
+                <Input 
+                  placeholder="Ou entrez une activité personnalisée..."
+                  value={tempActivityName}
+                  onChange={(e) => setTempActivityName(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-slate-500">Calories brûlées (kcal)</Label>
+              <Input 
+                type="number"
+                placeholder="0"
+                value={tempActivityKcal || ""}
+                onChange={(e) => setTempActivityKcal(Number(e.target.value))}
+                className="rounded-xl text-lg font-bold"
+              />
+            </div>
+
+            <Button 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-blue-200"
+              onClick={addActivity}
+              disabled={!tempActivityName || tempActivityKcal <= 0}
+            >
+              Enregistrer l'activité
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
