@@ -1,3 +1,6 @@
+const OFF_BASE = "https://world.openfoodfacts.org";
+const USER_AGENT = "CaloTrack - WebApp - Version 1.0";
+
 export interface OFFProduct {
   code: string;
   product_name: string;
@@ -15,19 +18,12 @@ export interface OFFProduct {
 
 export const fetchProductByBarcode = async (barcode: string): Promise<OFFProduct | null> => {
   try {
-    const response = await fetch(`/api/food/${barcode}`);
+    const response = await fetch(`${OFF_BASE}/api/v2/product/${barcode}.json`, {
+      headers: { "User-Agent": USER_AGENT },
+    });
     if (!response.ok) return null;
-    
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      return null;
-    }
-
     const data = await response.json();
-    
-    if (data.status === 1) {
-      return data.product as OFFProduct;
-    }
+    if (data.status === 1) return data.product as OFFProduct;
     return null;
   } catch (error) {
     console.error("Error fetching product from Open Food Facts", error);
@@ -37,27 +33,18 @@ export const fetchProductByBarcode = async (barcode: string): Promise<OFFProduct
 
 export const searchProductsByName = async (query: string): Promise<OFFProduct[]> => {
   if (!query || query.trim().length < 2) return [];
-  
   try {
-    const response = await fetch(`/api/food/search/${encodeURIComponent(query)}`);
+    const response = await fetch(
+      `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=24`,
+      { headers: { "User-Agent": USER_AGENT } }
+    );
     if (!response.ok) return [];
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      return [];
-    }
-
     const data = await response.json();
-    
-    if (data.products && Array.isArray(data.products)) {
-      return data.products as OFFProduct[];
-    }
-    return [];
+    return Array.isArray(data.products) ? (data.products as OFFProduct[]) : [];
   } catch (error) {
     console.error("Error searching products from Open Food Facts", error);
     return [];
   }
-
 };
 
 export interface UnifiedProduct {
@@ -68,30 +55,56 @@ export interface UnifiedProduct {
   carbsPer100g: number;
   fatPer100g: number;
   imageUrl?: string;
-  source: 'OFF' | 'USDA';
+  source: "OFF" | "USDA";
   servingQuantity?: number;
 }
 
-export const fetchNutritionData = async (input: string): Promise<{ source: string; products: UnifiedProduct[] }> => {
+export const fetchNutritionData = async (
+  input: string
+): Promise<{ source: string; products: UnifiedProduct[] }> => {
   const isBarcode = /^\d+$/.test(input);
 
   if (isBarcode) {
     try {
-      const res = await fetch(`/api/food/${input}`);
-      if (!res.ok) return { source: 'OFF', products: [] };
-      
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        return { source: 'OFF', products: [] };
-      }
-
-      const data = await res.json();
-      if (!data.product) return { source: 'OFF', products: [] };
-      
+      const response = await fetch(`${OFF_BASE}/api/v2/product/${input}.json`, {
+        headers: { "User-Agent": USER_AGENT },
+      });
+      if (!response.ok) return { source: "OFF", products: [] };
+      const data = await response.json();
+      if (!data.product) return { source: "OFF", products: [] };
       const p = data.product;
       return {
-        source: 'OFF',
-        products: [{
+        source: "OFF",
+        products: [
+          {
+            id: p.code || Math.random().toString(),
+            name: p.product_name || "Inconnu",
+            kcalPer100g: p.nutriments?.["energy-kcal_100g"] || 0,
+            proteinsPer100g: p.nutriments?.proteins_100g || 0,
+            carbsPer100g: p.nutriments?.carbohydrates_100g || 0,
+            fatPer100g: p.nutriments?.fat_100g || 0,
+            imageUrl: p.image_url,
+            source: "OFF",
+            servingQuantity: p.serving_quantity || 100,
+          },
+        ],
+      };
+    } catch (e) {
+      console.error("Error fetching barcode from OFF", e);
+      return { source: "OFF", products: [] };
+    }
+  } else {
+    try {
+      const response = await fetch(
+        `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(input)}&json=1&page_size=20`,
+        { headers: { "User-Agent": USER_AGENT } }
+      );
+      if (!response.ok) return { source: "OFF", products: [] };
+      const data = await response.json();
+
+      const offProducts: UnifiedProduct[] = (data.products || [])
+        .slice(0, 20)
+        .map((p: any) => ({
           id: p.code || Math.random().toString(),
           name: p.product_name || "Inconnu",
           kcalPer100g: p.nutriments?.["energy-kcal_100g"] || 0,
@@ -99,65 +112,14 @@ export const fetchNutritionData = async (input: string): Promise<{ source: strin
           carbsPer100g: p.nutriments?.carbohydrates_100g || 0,
           fatPer100g: p.nutriments?.fat_100g || 0,
           imageUrl: p.image_url,
-          source: 'OFF',
-          servingQuantity: p.serving_quantity || 100
-        }]
-      };
+          source: "OFF" as const,
+          servingQuantity: p.serving_quantity || 100,
+        }));
+
+      return { source: "OFF", products: offProducts };
     } catch (e) {
-      console.error("Error fetching barcode from proxy", e);
-      return { source: 'OFF', products: [] };
-    }
-  } else {
-    try {
-      const [offRes, usdaRes] = await Promise.all([
-        fetch(`/api/food/search/${encodeURIComponent(input)}`),
-        fetch(`/api/food/usda/${encodeURIComponent(input)}`)
-      ]);
-
-      const getJson = async (res: Response) => {
-        const ct = res.headers.get("content-type");
-        if (res.ok && ct && ct.includes("application/json")) {
-          return await res.json();
-        }
-        return null;
-      };
-
-      const offData = await getJson(offRes) || { products: [] };
-      const usdaData = await getJson(usdaRes) || { foods: [] };
-
-      const offProducts: UnifiedProduct[] = (offData.products || []).slice(0, 10).map((p: any) => ({
-        id: p.code || Math.random().toString(),
-        name: p.product_name || "Inconnu",
-        kcalPer100g: p.nutriments?.["energy-kcal_100g"] || 0,
-        proteinsPer100g: p.nutriments?.proteins_100g || 0,
-        carbsPer100g: p.nutriments?.carbohydrates_100g || 0,
-        fatPer100g: p.nutriments?.fat_100g || 0,
-        imageUrl: p.image_url,
-        source: 'OFF',
-        servingQuantity: p.serving_quantity || 100
-      }));
-
-      const usdaProducts: UnifiedProduct[] = (usdaData.foods || []).slice(0, 10).map((f: any) => {
-        const getNutrient = (id: number) => f.foodNutrients.find((n: any) => n.nutrientId === id)?.value || 0;
-        return {
-          id: f.fdcId?.toString() || Math.random().toString(),
-          name: f.description,
-          kcalPer100g: getNutrient(1008),
-          proteinsPer100g: getNutrient(1003),
-          carbsPer100g: getNutrient(1005),
-          fatPer100g: getNutrient(1004),
-          source: 'USDA',
-          servingQuantity: 100
-        };
-      });
-
-      return { 
-        source: 'BOTH', 
-        products: [...usdaProducts, ...offProducts]
-      };
-    } catch (e) {
-      console.error("Error searching from proxies", e);
-      return { source: 'BOTH', products: [] };
+      console.error("Error searching from OFF", e);
+      return { source: "OFF", products: [] };
     }
   }
 };
