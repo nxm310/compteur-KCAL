@@ -877,65 +877,181 @@ export default function App() {
             className="px-6 space-y-6 max-w-md mx-auto mt-6"
           >
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-6">
+
+              {/* ── Identité ── */}
               <div className="space-y-4">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-violet-500" />
+                  Mon profil
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 space-y-2">
+                    <Label className="text-xs text-slate-500">Sexe</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["male", "female"] as Sex[]).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setProfile({...profile, sex: s})}
+                          className={`h-11 rounded-xl font-bold text-sm border-2 transition-all ${
+                            profile.sex === s
+                              ? "bg-violet-500 text-white border-violet-500"
+                              : "bg-white text-slate-500 border-slate-200"
+                          }`}
+                        >
+                          {s === "male" ? "👨 Homme" : "👩 Femme"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Âge</Label>
+                    <Input type="number" value={profile.age}
+                      onChange={(e) => setProfile({...profile, age: Number(e.target.value)})}
+                      className="rounded-xl" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Taille (cm)</Label>
+                    <Input type="number" value={profile.height}
+                      onChange={(e) => setProfile({...profile, height: Number(e.target.value)})}
+                      className="rounded-xl" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Poids actuel (kg)</Label>
+                    <Input type="number" value={profile.currentWeight}
+                      onChange={(e) => setProfile({...profile, currentWeight: Number(e.target.value)})}
+                      className="rounded-xl" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Poids objectif (kg)</Label>
+                    <Input type="number" value={profile.goalWeight}
+                      onChange={(e) => setProfile({...profile, goalWeight: Number(e.target.value)})}
+                      className="rounded-xl" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-500">Niveau d'activité</Label>
+                  <div className="space-y-2">
+                    {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((level) => (
+                      <button key={level}
+                        onClick={() => setProfile({...profile, activityLevel: level})}
+                        className={`w-full h-10 rounded-xl font-semibold text-sm border-2 transition-all text-left px-4 ${
+                          profile.activityLevel === level
+                            ? "bg-indigo-500 text-white border-indigo-500"
+                            : "bg-white text-slate-500 border-slate-200"
+                        }`}
+                      >
+                        {ACTIVITY_LABELS[level]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Calories ── */}
+              <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                   <Flame className="w-5 h-5 text-orange-500" />
                   Objectif Calories
                 </h3>
                 <div className="space-y-2">
                   <Label className="text-xs text-slate-500">Calories Journalières (kcal)</Label>
-                  <Input 
-                    type="number" 
-                    value={profile.calorieGoal} 
+                  <Input type="number" value={profile.calorieGoal}
                     onChange={(e) => setProfile({...profile, calorieGoal: Number(e.target.value)})}
-                    className="rounded-xl text-lg font-bold"
-                  />
+                    className="rounded-xl text-lg font-bold" />
                 </div>
+                {(() => {
+                  const rec = computeRecommendations(profile);
+                  return (
+                    <div className="bg-orange-50 rounded-2xl p-3 space-y-1">
+                      <p className="text-xs font-bold text-orange-600">
+                        💡 Dépense estimée (TDEE) : {rec.tdee} kcal/jour
+                      </p>
+                      <p className="text-[10px] text-orange-400">
+                        Métabolisme de base : {rec.bmr} kcal · {ACTIVITY_LABELS[profile.activityLevel]}
+                      </p>
+                      <button onClick={() => setProfile({...profile, calorieGoal: rec.tdee})}
+                        className="text-[10px] font-bold text-orange-500 underline">
+                        Utiliser cette valeur
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
 
+              {/* ── Macros ── */}
               <div className="space-y-4 pt-4 border-t">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Dna className="w-5 h-5 text-blue-500" />
-                  Objectifs Macros (g)
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Dna className="w-5 h-5 text-blue-500" />
+                    Objectifs Macros (g)
+                  </h3>
+                  <button
+                    onClick={() => {
+                      const rec = computeRecommendations(profile);
+                      setProfile({...profile, proteinGoal: rec.protein, carbsGoal: rec.carbs, fatGoal: rec.fat});
+                    }}
+                    className="text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full flex items-center gap-1"
+                  >
+                    <Zap className="w-3 h-3" /> Calculer
+                  </button>
+                </div>
+                {(() => {
+                  const rec = computeRecommendations(profile);
+                  return (
+                    <div className="bg-blue-50 rounded-2xl p-3 space-y-1 text-[10px] text-blue-500">
+                      <p className="font-bold text-blue-600">Préconisation ({rec.source}) :</p>
+                      <div className="grid grid-cols-3 gap-2 mt-1">
+                        <div className="text-center">
+                          <p className="font-black text-blue-700 text-sm">{rec.protein}g</p>
+                          <p>Protéines</p>
+                          <p className="text-[9px] text-blue-400">{PROTEIN_FACTORS[profile.activityLevel]}g/kg</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="font-black text-blue-700 text-sm">{rec.carbs}g</p>
+                          <p>Glucides</p>
+                          <p className="text-[9px] text-blue-400">~45-50% kcal</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="font-black text-blue-700 text-sm">{rec.fat}g</p>
+                          <p>Lipides</p>
+                          <p className="text-[9px] text-blue-400">~35% kcal</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label className="text-[10px] text-slate-500 flex items-center gap-1">
                       <Dna className="w-3 h-3" /> Prot
                     </Label>
-                    <Input 
-                      type="number" 
-                      value={profile.proteinGoal} 
+                    <Input type="number" value={profile.proteinGoal}
                       onChange={(e) => setProfile({...profile, proteinGoal: Number(e.target.value)})}
-                      className="rounded-xl px-2"
-                    />
+                      className="rounded-xl px-2" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] text-slate-500 flex items-center gap-1">
                       <Wheat className="w-3 h-3" /> Gluc
                     </Label>
-                    <Input 
-                      type="number" 
-                      value={profile.carbsGoal} 
+                    <Input type="number" value={profile.carbsGoal}
                       onChange={(e) => setProfile({...profile, carbsGoal: Number(e.target.value)})}
-                      className="rounded-xl px-2"
-                    />
+                      className="rounded-xl px-2" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] text-slate-500 flex items-center gap-1">
                       <Droplets className="w-3 h-3" /> Lipi
                     </Label>
-                    <Input 
-                      type="number" 
-                      value={profile.fatGoal} 
+                    <Input type="number" value={profile.fatGoal}
                       onChange={(e) => setProfile({...profile, fatGoal: Number(e.target.value)})}
-                      className="rounded-xl px-2"
-                    />
+                      className="rounded-xl px-2" />
                   </div>
                 </div>
+                <p className="text-[10px] text-slate-300 text-center">
+                  Les valeurs calculées sont modifiables manuellement
+                </p>
               </div>
 
-              <Button 
+              <Button
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl h-14 mt-4"
                 onClick={() => setView("dashboard")}
               >
