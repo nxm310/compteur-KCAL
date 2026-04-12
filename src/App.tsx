@@ -228,10 +228,18 @@ export default function App() {
   const [showUpdateAvailable, setShowUpdateAvailable] = useState(false);
 
   useEffect(() => {
+    // Le check de version nécessite le serveur Express local.
+    // Sur GitHub Pages (static), /api/version n'existe pas → on désactive silencieusement.
+    const isLocalServer = window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    if (!isLocalServer) return;
+
     const checkVersion = async () => {
       try {
         const res = await fetch("/api/version");
         if (res.ok) {
+          const ct = res.headers.get("content-type") || "";
+          if (!ct.includes("application/json")) return;
           const data = await res.json();
           if (data.version && data.version !== CURRENT_VERSION) {
             setShowUpdateAvailable(true);
