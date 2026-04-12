@@ -39,7 +39,7 @@ import {
   Dumbbell,
   Timer,
   Activity as ActivityIcon,
-  Wind
+  Wind,
   Download,
   Upload
 } from "lucide-react";
