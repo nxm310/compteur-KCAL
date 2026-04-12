@@ -40,6 +40,8 @@ import {
   Timer,
   Activity as ActivityIcon,
   Wind
+  Download,
+  Upload
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -451,6 +453,47 @@ export default function App() {
 
   const [selectedMealForView, setSelectedMealForView] = useState<number | null>(null);
 
+  // ─── Sauvegarde / Restauration ───────────────────────────────────────────
+
+  const handleExport = useCallback(() => {
+    const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2"];
+    const backup: Record<string, any> = { exportedAt: new Date().toISOString(), version: 2 };
+    KEYS.forEach((k) => {
+      try { backup[k] = JSON.parse(localStorage.getItem(k) || "null"); } catch { backup[k] = null; }
+    });
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `calotrack-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const backup = JSON.parse(ev.target?.result as string);
+        if (!backup.version) throw new Error("Fichier invalide");
+        const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2"];
+        KEYS.forEach((k) => {
+          if (backup[k] !== null && backup[k] !== undefined) {
+            localStorage.setItem(k, JSON.stringify(backup[k]));
+          }
+        });
+        window.location.reload();
+      } catch {
+        alert("Fichier de sauvegarde invalide ou corrompu.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
       <AnimatePresence>
@@ -829,6 +872,45 @@ export default function App() {
                 Enregistrer & Retour
               </Button>
             </Card>
+
+            {/* Sauvegarde & Restauration */}
+            <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Download className="w-5 h-5 text-emerald-500" />
+                Sauvegarde & Restauration
+              </h3>
+              <p className="text-xs text-slate-400">
+                Exporte toutes tes données (repas, activités, historique, profil) dans un fichier JSON local.
+              </p>
+              <Button
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-2xl h-12"
+                onClick={handleExport}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Exporter mes données
+              </Button>
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  className="w-full border-2 border-slate-200 text-slate-600 font-bold rounded-2xl h-12 hover:border-indigo-400 hover:text-indigo-600"
+                  onClick={() => document.getElementById("import-file")?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Restaurer depuis un fichier
+                </Button>
+                <input
+                  id="import-file"
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImport}
+                />
+              </div>
+              <p className="text-[10px] text-slate-300 text-center">
+                ⚠️ La restauration remplace toutes les données existantes
+              </p>
+            </Card>
+
           </motion.main>
         )}
       </AnimatePresence>
