@@ -41,7 +41,10 @@ import {
   Activity as ActivityIcon,
   Wind,
   Download,
-  Upload
+  Upload,
+  Zap,
+  ChevronDown,
+  UserChek
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -91,7 +94,14 @@ interface UserProfile {
   proteinGoal: number;
   carbsGoal: number;
   fatGoal: number;
+  sex: Sex;
+  age: number;
+  height: number;
+  activityLevel: ActivityLevel;
 }
+
+type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "very_active";
+type Sex = "male" | "female";
 
 const DEFAULT_PROFILE: UserProfile = {
   currentWeight: 75,
@@ -100,6 +110,67 @@ const DEFAULT_PROFILE: UserProfile = {
   proteinGoal: 150,
   carbsGoal: 200,
   fatGoal: 65,
+  sex: "male",
+  age: 30,
+  height: 175,
+  activityLevel: "moderate",
+};
+
+const ACTIVITY_FACTORS: Record<ActivityLevel, number> = {
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  active: 1.725,
+  very_active: 1.9,
+};
+
+const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
+  sedentary: "Sédentaire",
+  light: "Légèrement actif",
+  moderate: "Modérément actif",
+  active: "Très actif",
+  very_active: "Extrêmement actif",
+};
+
+const PROTEIN_FACTORS: Record<ActivityLevel, number> = {
+  sedentary: 1.0,
+  light: 1.2,
+  moderate: 1.5,
+  active: 1.8,
+  very_active: 2.0,
+};
+
+interface MacroRecommendation {
+  tdee: number;
+  bmr: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  source: string;
+}
+
+const computeRecommendations = (profile: UserProfile): MacroRecommendation => {
+  const { sex, age, currentWeight, height, activityLevel, calorieGoal } = profile;
+
+  const bmr = sex === "male"
+    ? 10 * currentWeight + 6.25 * height - 5 * age + 5
+    : 10 * currentWeight + 6.25 * height - 5 * age - 161;
+
+  const tdee = Math.round(bmr * ACTIVITY_FACTORS[activityLevel]);
+  const kcal = calorieGoal > 0 ? calorieGoal : tdee;
+
+  const protein = Math.round(currentWeight * PROTEIN_FACTORS[activityLevel]);
+  const fat = Math.round((kcal * 0.35) / 9);
+  const carbs = Math.round(Math.max(0, kcal - protein * 4 - fat * 9) / 4);
+
+  return {
+    tdee,
+    bmr: Math.round(bmr),
+    protein,
+    carbs,
+    fat,
+    source: "Mifflin-St Jeor + ANSES 2021",
+  };
 };
 
 const CURRENT_VERSION = "2026-04-12T14:48:00Z";
