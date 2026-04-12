@@ -35,7 +35,171 @@ const fetchWithTimeout = async (
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface OFFProduct { ... }
-export interface UnifiedProduct { ... }
+export interface OFFProduct {
+  code: string;
+  product_name: string;
+  image_url?: string;
+  nutriments: {
+    "energy-kcal_100g"?: number;
+    "energy-kcal_serving"?: number;
+    proteins_100g?: number;
+    carbohydrates_100g?: number;
+    fat_100g?: number;
+  };
+  serving_size?: string;
+  serving_quantity?: number;
+}
 
-// ─── etc. (voir fichier complet ci-dessus)
+export interface UnifiedProduct {
+  id: string;
+  name: string;
+  kcalPer100g: number;
+  proteinsPer100g: number;
+  carbsPer100g: number;
+  fatPer100g: number;
+  imageUrl?: string;
+  source: "OFF" | "USDA";
+  servingQuantity?: number;
+}
+
+// ─── Mappers ─────────────────────────────────────────────────────────────────
+
+const mapOFFProduct = (p: any): UnifiedProduct => ({
+  id: p.code || Math.random().toString(),
+  name: p.product_name || "Inconnu",
+  kcalPer100g: p.nutriments?.["energy-kcal_100g"] || 0,
+  proteinsPer100g: p.nutriments?.proteins_100g || 0,
+  carbsPer100g: p.nutriments?.carbohydrates_100g || 0,
+  fatPer100g: p.nutriments?.fat_100g || 0,
+  imageUrl: p.image_url,
+  source: "OFF" as const,
+  servingQuantity: p.serving_quantity || 100,
+});
+
+const mapUSDAProduct = (p: any): UnifiedProduct => {
+  const nutrients = p.foodNutrients || [];
+  const get = (id: number) => nutrients.find((n: any) => n.nutrientId === id)?.value || 0;
+  return {
+    id: String(p.fdcId || Math.random()),
+    name: p.description || "Inconnu",
+    kcalPer100g: get(1008),       // Energy (kcal)
+    proteinsPer100g: get(1003),   // Protein
+    carbsPer100g: get(1005),      // Carbohydrates
+    fatPer100g: get(1004),        // Total fat
+    imageUrl: undefined,
+    source: "USDA" as const,
+    servingQuantity: 100,
+  };
+};
+
+// ─── OFF : barcode ────────────────────────────────────────────────────────────
+
+const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
+  try {
+    const res = await fetchWithTimeout(
+      `${OFF_BASE}/api/v2/product/${barcode}.json`,
+      { headers: { "User-Agent": OFF_USER_AGENT } }
+    );
+    if (!res.ok) return null;
+    const data = await safeJson(res);
+    if (!data?.product) return null;
+    return mapOFFProduct(data.product);
+  } catch (e) {
+    console.warn("OFF barcode error:", e);
+    return null;
+  }
+};
+
+// ─── OFF : search ─────────────────────────────────────────────────────────────
+
+const searchOFF = async (query: string): Promise<UnifiedProduct[]> => {
+  try {
+    const res = await fetchWithTimeout(
+      `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=20`,
+      { headers: { "User-Agent": OFF_USER_AGENT } }
+    );
+    if (!res.ok) return [];
+    const data = await safeJson(res);
+    if (!data) return [];
+    return (data.products || []).slice(0, 20).map(mapOFFProduct);
+  } catch (e) {
+    console.warn("OFF search error:", e);
+    return [];
+  }
+};
+
+// ─── USDA : search ────────────────────────────────────────────────────────────
+
+const searchUSDA = async (query: string, limit = 10): Promise<UnifiedProduct[]> => {
+  try {
+    const url = `${USDA_BASE}/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(query)}&pageSize=${limit}&dataType=Foundation,SR%20Legacy,Branded`;
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) return [];
+    const data = await safeJson(res);
+    if (!data?.foods) return [];
+    return data.foods.slice(0, limit).map(mapUSDAProduct);
+  } catch (e) {
+    console.warn("USDA search error:", e);
+    return [];
+  }
+};
+
+// ─── API publique ─────────────────────────────────────────────────────────────
+
+export const fetchProductByBarcode = async (barcode: string): Promise<OFFProduct | null> => {
+  const result = await fetchOFFByBarcode(barcode);
+  if (!result) return null;
+  return {
+    code: result.id,
+    product_name: result.name,
+    image_url: result.imageUrl,
+    nutriments: {
+      "energy-kcal_100g": result.kcalPer100g,
+      proteins_100g: result.proteinsPer100g,
+      carbohydrates_100g: result.carbsPer100g,
+      fat_100g: result.fatPer100g,
+    },
+    serving_quantity: result.servingQuantity,
+  };
+};
+
+export const searchProductsByName = async (query: string): Promise<OFFProduct[]> => {
+  if (!query || query.trim().length < 2) return [];
+  const results = await searchOFF(query);
+  return results.map((r) => ({
+    code: r.id,
+    product_name: r.name,
+    image_url: r.imageUrl,
+    nutriments: {
+      "energy-kcal_100g": r.kcalPer100g,
+      proteins_100g: r.proteinsPer100g,
+      carbohydrates_100g: r.carbsPer100g,
+      fat_100g: r.fatPer100g,
+    },
+    serving_quantity: r.servingQuantity,
+  }));
+};
+
+export const fetchNutritionData = async (
+  input: string
+): Promise<{ source: string; products: UnifiedProduct[] }> => {
+  const isBarcode = /^\d+$/.test(input);
+
+  if (isBarcode) {
+    const offResult = await fetchOFFByBarcode(input);
+    if (offResult) return { source: "OFF", products: [offResult] };
+    console.warn("Barcode non trouvé dans OFF:", input);
+    return { source: "OFF", products: [] };
+
+  } else {
+    const offResults = await searchOFF(input);
+
+    // USDA en complément si OFF renvoie peu de résultats
+    if (offResults.length < 3) {
+      const usdaResults = await searchUSDA(input, 10);
+      return { source: "OFF+USDA", products: [...offResults, ...usdaResults] };
+    }
+
+    return { source: "OFF", products: offResults };
+  }
+};
