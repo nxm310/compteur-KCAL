@@ -96,6 +96,16 @@ async function startServer() {
     }
   });
 
+  // API for app version check
+  app.get("/api/version", (req, res) => {
+    try {
+      const versionData = { version: process.env.APP_VERSION || "2026-04-12T14:48:00Z" };
+      res.json(versionData);
+    } catch (error) {
+      res.status(500).json({ version: "unknown" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
