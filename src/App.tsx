@@ -559,7 +559,12 @@ export default function App() {
               </div>
               <Button
                 size="sm"
-                onClick={() => window.location.reload()}
+                onClick={() => {
+  if ((window as any).__newWorker) {
+    (window as any).__newWorker.postMessage({ type: 'SKIP_WAITING' });
+  }
+  window.location.reload();
+}}
                 className="bg-white text-indigo-600 hover:bg-indigo-50 rounded-full h-8 px-4 font-bold text-xs flex items-center gap-2 border-none shadow-sm"
               >
                 <RefreshCw className="w-3 h-3" />
