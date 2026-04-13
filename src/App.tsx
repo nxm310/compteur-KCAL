@@ -60,7 +60,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Scanner } from "@/components/Scanner";
+import { Scanner, ScannerHandle } from "@/components/Scanner";
 import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct, UnifiedProduct } from "@/services/foodService";
 
 interface LoggedProduct {
@@ -267,6 +267,7 @@ export default function App() {
   };
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const scannerRef = useRef<ScannerHandle>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [tempActivityName, setTempActivityName] = useState("");
@@ -1121,7 +1122,7 @@ export default function App() {
                     >
                       <div className="w-12 h-12 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
+                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                         ) : (
                           <Apple className="w-6 h-6 text-slate-300" />
                         )}
@@ -1263,7 +1264,7 @@ export default function App() {
                 >
                   <div className="w-14 h-14 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                     {product.imageUrl ? (
-                      <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
+                      <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                     ) : (
                       <Apple className="w-7 h-7 text-slate-300" />
                     )}
@@ -1321,7 +1322,7 @@ export default function App() {
       </Dialog>
 
       {/* Scanner Dialog */}
-      <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
+      <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); }}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
           <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
@@ -1333,6 +1334,7 @@ export default function App() {
             <div className="space-y-2">
               <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scanner ou Saisir</h4>
               <Scanner 
+                ref={scannerRef}
                 isOpen={isScannerOpen} 
                 onScanSuccess={handleScanSuccess} 
               />
@@ -1360,7 +1362,7 @@ export default function App() {
                     >
                       <div className="w-8 h-8 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
+                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                         ) : (
                           <Apple className="w-4 h-4 text-slate-300" />
                         )}
@@ -1403,8 +1405,6 @@ export default function App() {
                     alt={scannedProduct.product_name} 
                     className="w-16 h-16 object-contain rounded-xl bg-white p-1 shadow-sm"
                     referrerPolicy="no-referrer"
-                    loading="eager"
-                    decoding="async"
                   />
                 )}
                 <div className="min-w-0 flex-1">
@@ -1539,8 +1539,6 @@ export default function App() {
                               alt={product.name} 
                               className="w-12 h-12 object-contain rounded-lg bg-slate-50"
                               referrerPolicy="no-referrer"
-                              loading="lazy"
-                              decoding="async"
                             />
                           )}
                           <div className="flex-1 min-w-0">
@@ -1632,7 +1630,7 @@ export default function App() {
                         >
                           <div className="w-10 h-10 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                             {product.imageUrl ? (
-                              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
+                              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                             ) : (
                               <Apple className="w-5 h-5 text-slate-300" />
                             )}
