@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import {
   BrowserMultiFormatReader,
 } from '@zxing/browser';
@@ -17,7 +17,13 @@ interface ScannerProps {
   isOpen: boolean;
 }
 
-export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) => {
+// Handle exposé au parent via ref pour forcer l'arrêt de la caméra
+export interface ScannerHandle {
+  stopCamera: () => void;
+}
+
+export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
+  ({ onScanSuccess, onScanError, isOpen }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
@@ -39,7 +45,7 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
       controlsRef.current = null;
     }
 
-    // 2. Arrêter le flux média manuellement (Crucial pour iOS)
+    // 2. Arrêter le flux média — CRITIQUE pour éteindre l'indicateur caméra iOS
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         track.stop();
@@ -60,14 +66,19 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
     // 4. Reset le reader
     if (readerRef.current) {
       try {
-        // @ts-ignore - reset exists on BrowserCodeReader
+        // @ts-ignore
         readerRef.current.reset();
       } catch (e) {}
       readerRef.current = null;
     }
-    
+
     setScannerReady(false);
   }, []);
+
+  // Exposer stopCamera au composant parent via ref
+  useImperativeHandle(ref, () => ({
+    stopCamera: stopScanner,
+  }), [stopScanner]);
 
   useEffect(() => {
     if (!isOpen || showManual) {
@@ -100,22 +111,17 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
           },
         };
 
-        // On demande le flux nous-mêmes pour avoir un contrôle total
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // On attend que la vidéo soit prête
           await videoRef.current.play();
-          
           setScannerReady(true);
 
-          // On lance le décodage sur l'élément vidéo
           const controls = await reader.decodeFromVideoElement(videoRef.current, (result, error) => {
             if (result && !isProcessingRef.current) {
               isProcessingRef.current = true;
-              // On arrête TOUT avant de notifier le succès
               stopScanner();
               onScanSuccess(result.getText());
             }
@@ -172,31 +178,22 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
           </div>
         ) : (
           <>
-            {/* Élément vidéo — ZXing a besoin d'un <video> réel, pas d'un div */}
             <video
               ref={videoRef}
               className="w-full h-full object-cover"
-              // Attributs critiques pour iOS Safari :
               autoPlay
               muted
-              playsInline   // ← OBLIGATOIRE sur iOS, sinon plein écran forcé
+              playsInline
             />
 
-            {/* Overlay viseur */}
             <div className="absolute inset-0 pointer-events-none">
-              {/* Coins du cadre */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-64 h-40 relative">
-                  {/* Coin haut-gauche */}
                   <span className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-indigo-400 rounded-tl" />
-                  {/* Coin haut-droite */}
                   <span className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-indigo-400 rounded-tr" />
-                  {/* Coin bas-gauche */}
                   <span className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-indigo-400 rounded-bl" />
-                  {/* Coin bas-droite */}
                   <span className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-indigo-400 rounded-br" />
 
-                  {/* Ligne de scan animée */}
                   {scannerReady && (
                     <div
                       className="absolute left-0 right-0 h-0.5 bg-red-500/70 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
@@ -206,14 +203,12 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
                 </div>
               </div>
 
-              {/* Masque sombre autour du cadre */}
               <div className="absolute inset-0 bg-black/40" style={{
                 maskImage: 'radial-gradient(ellipse 280px 180px at 50% 50%, transparent 100%, black 100%)',
                 WebkitMaskImage: 'radial-gradient(ellipse 280px 180px at 50% 50%, transparent 100%, black 100%)',
               }} />
             </div>
 
-            {/* Indicateur "chargement caméra" */}
             {!scannerReady && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                 <ScanLine className="w-10 h-10 text-indigo-400 animate-pulse" />
@@ -231,7 +226,6 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
         {showManual ? "Retour au scanner" : "Saisir manuellement le code"}
       </Button>
 
-      {/* Animation CSS pour la ligne de scan */}
       <style>{`
         @keyframes scanLine {
           0%   { top: 4px;  opacity: 1; }
@@ -244,4 +238,6 @@ export const Scanner = ({ onScanSuccess, onScanError, isOpen }: ScannerProps) =>
       `}</style>
     </div>
   );
-};
+});
+
+Scanner.displayName = "Scanner";
