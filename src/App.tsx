@@ -1121,7 +1121,7 @@ export default function App() {
                     >
                       <div className="w-12 h-12 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
                         ) : (
                           <Apple className="w-6 h-6 text-slate-300" />
                         )}
@@ -1263,7 +1263,7 @@ export default function App() {
                 >
                   <div className="w-14 h-14 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                     {product.imageUrl ? (
-                      <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                      <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
                     ) : (
                       <Apple className="w-7 h-7 text-slate-300" />
                     )}
@@ -1360,7 +1360,7 @@ export default function App() {
                     >
                       <div className="w-8 h-8 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
                         ) : (
                           <Apple className="w-4 h-4 text-slate-300" />
                         )}
@@ -1403,6 +1403,8 @@ export default function App() {
                     alt={scannedProduct.product_name} 
                     className="w-16 h-16 object-contain rounded-xl bg-white p-1 shadow-sm"
                     referrerPolicy="no-referrer"
+                    loading="eager"
+                    decoding="async"
                   />
                 )}
                 <div className="min-w-0 flex-1">
@@ -1537,6 +1539,8 @@ export default function App() {
                               alt={product.name} 
                               className="w-12 h-12 object-contain rounded-lg bg-slate-50"
                               referrerPolicy="no-referrer"
+                              loading="lazy"
+                              decoding="async"
                             />
                           )}
                           <div className="flex-1 min-w-0">
@@ -1628,7 +1632,7 @@ export default function App() {
                         >
                           <div className="w-10 h-10 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
                             {product.imageUrl ? (
-                              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" loading="lazy" decoding="async" />
                             ) : (
                               <Apple className="w-5 h-5 text-slate-300" />
                             )}
