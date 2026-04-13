@@ -17,13 +17,13 @@ interface ScannerProps {
   isOpen: boolean;
 }
 
-// Handle exposé au parent via ref pour forcer l'arrêt de la caméra
 export interface ScannerHandle {
   stopCamera: () => void;
 }
 
 export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   ({ onScanSuccess, onScanError, isOpen }, ref) => {
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
@@ -34,59 +34,61 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   const [showManual, setShowManual] = useState(false);
   const [scannerReady, setScannerReady] = useState(false);
 
+  // Arrêt complet et immédiat de la caméra — méthode la plus agressive possible
   const stopScanner = useCallback(() => {
-    // 1. Arrêter les contrôles ZXing
+    // 1. Stopper ZXing
     if (controlsRef.current) {
-      try {
-        controlsRef.current.stop();
-      } catch (e) {
-        console.warn("Error stopping zxing controls:", e);
-      }
+      try { controlsRef.current.stop(); } catch (_) {}
       controlsRef.current = null;
     }
 
-    // 2. Arrêter le flux média — CRITIQUE pour éteindre l'indicateur caméra iOS
+    // 2. Stopper tous les tracks du stream (éteint l'indicateur caméra iOS)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         track.stop();
-        track.enabled = false;
       });
       streamRef.current = null;
     }
 
-    // 3. Nettoyer l'élément vidéo
+    // 3. Détacher le stream de la vidéo
     if (videoRef.current) {
       const video = videoRef.current;
+      // Détacher d'abord le srcObject pour que le navigateur libère la caméra
+      if (video.srcObject) {
+        const s = video.srcObject as MediaStream;
+        s.getTracks().forEach(t => t.stop()); // double sécurité
+        video.srcObject = null;
+      }
       video.pause();
-      video.srcObject = null;
       video.removeAttribute("src");
-      video.load();
+      try { video.load(); } catch (_) {}
     }
 
-    // 4. Reset le reader
+    // 4. Reset reader
     if (readerRef.current) {
-      try {
-        // @ts-ignore
-        readerRef.current.reset();
-      } catch (e) {}
+      try { (readerRef.current as any).reset(); } catch (_) {}
       readerRef.current = null;
     }
 
     setScannerReady(false);
+    isProcessingRef.current = false;
   }, []);
 
-  // Exposer stopCamera au composant parent via ref
-  useImperativeHandle(ref, () => ({
-    stopCamera: stopScanner,
-  }), [stopScanner]);
+  // Exposé au parent pour arrêt immédiat sans attendre React
+  useImperativeHandle(ref, () => ({ stopCamera: stopScanner }), [stopScanner]);
 
+  // Arrêt immédiat dès que isOpen passe à false — sans délai
   useEffect(() => {
-    if (!isOpen || showManual) {
+    if (!isOpen) {
       stopScanner();
-      return;
     }
+  }, [isOpen, stopScanner]);
 
-    isProcessingRef.current = false;
+  // Démarrage caméra
+  useEffect(() => {
+    if (!isOpen || showManual) return;
+
+    let cancelled = false;
 
     const startCamera = async () => {
       try {
@@ -101,7 +103,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
         const reader = new BrowserMultiFormatReader(hints, {
           delayBetweenScanAttempts: 100,
         });
-        readerRef.current = reader;
 
         const constraints: MediaStreamConstraints = {
           video: {
@@ -112,34 +113,53 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
         };
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // Si fermé pendant l'attente getUserMedia → libérer immédiatement
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
         streamRef.current = stream;
+        readerRef.current = reader;
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
+
+          if (cancelled) { stopScanner(); return; }
+
           setScannerReady(true);
 
-          const controls = await reader.decodeFromVideoElement(videoRef.current, (result, error) => {
-            if (result && !isProcessingRef.current) {
-              isProcessingRef.current = true;
-              stopScanner();
-              onScanSuccess(result.getText());
+          const controls = await reader.decodeFromVideoElement(
+            videoRef.current,
+            (result, error) => {
+              if (result && !isProcessingRef.current) {
+                isProcessingRef.current = true;
+                stopScanner();
+                onScanSuccess(result.getText());
+              }
+              if (error && !(error instanceof NotFoundException)) {
+                if (onScanError) onScanError(error.message);
+              }
             }
-            if (error && !(error instanceof NotFoundException)) {
-              if (onScanError) onScanError(error.message);
-            }
-          });
+          );
+
+          if (cancelled) { stopScanner(); return; }
           controlsRef.current = controls;
         }
       } catch (err: any) {
-        console.error('Scanner start error:', err);
-        if (onScanError) onScanError(err.message ?? 'Impossible de démarrer la caméra');
+        if (!cancelled) {
+          console.error('Scanner start error:', err);
+          if (onScanError) onScanError(err.message ?? 'Impossible de démarrer la caméra');
+        }
       }
     };
 
     startCamera();
 
     return () => {
+      cancelled = true;
       stopScanner();
     };
   }, [isOpen, showManual, onScanSuccess, onScanError, stopScanner]);
@@ -154,7 +174,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Viewfinder */}
       <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-[4/3] relative border-4 border-slate-100 shadow-inner">
         {showManual ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-slate-900 text-white">
@@ -185,7 +204,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
               muted
               playsInline
             />
-
             <div className="absolute inset-0 pointer-events-none">
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-64 h-40 relative">
@@ -193,7 +211,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
                   <span className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-indigo-400 rounded-tr" />
                   <span className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-indigo-400 rounded-bl" />
                   <span className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-indigo-400 rounded-br" />
-
                   {scannerReady && (
                     <div
                       className="absolute left-0 right-0 h-0.5 bg-red-500/70 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
@@ -202,13 +219,11 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
                   )}
                 </div>
               </div>
-
               <div className="absolute inset-0 bg-black/40" style={{
                 maskImage: 'radial-gradient(ellipse 280px 180px at 50% 50%, transparent 100%, black 100%)',
                 WebkitMaskImage: 'radial-gradient(ellipse 280px 180px at 50% 50%, transparent 100%, black 100%)',
               }} />
             </div>
-
             {!scannerReady && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                 <ScanLine className="w-10 h-10 text-indigo-400 animate-pulse" />
