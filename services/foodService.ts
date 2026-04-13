@@ -1,4 +1,5 @@
 const OFF_BASE = "https://world.openfoodfacts.org";
+const OFF_FR_BASE = "https://fr.openfoodfacts.org"; // Priorité FR/EU pour recherches manuelles
 const OFF_USER_AGENT = "CaloTrack - WebApp - Version 1.0";
 const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
 const USDA_API_KEY = "SBFfcU1dYSIQkGUKBUstxhJUkJVim2DqaWbnBd0J";
@@ -110,18 +111,42 @@ const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null
   }
 };
 
-// ─── OFF : search ─────────────────────────────────────────────────────────────
+// ─── OFF : search (fr.openfoodfacts.org — priorité EU/FR) ────────────────────
 
-const searchOFF = async (query: string): Promise<UnifiedProduct[]> => {
+const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
     const res = await fetchWithTimeout(
-      `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=20`,
+      `${OFF_FR_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`,
       { headers: { "User-Agent": OFF_USER_AGENT } }
     );
     if (!res.ok) return [];
     const data = await safeJson(res);
     if (!data) return [];
-    return (data.products || []).slice(0, 20).map(mapOFFProduct);
+    return (data.products || [])
+      .filter((p: any) => p.product_name && (p.nutriments?.["energy-kcal_100g"] || 0) > 0)
+      .slice(0, pageSize)
+      .map(mapOFFProduct);
+  } catch (e) {
+    console.warn("OFF FR search error:", e);
+    return [];
+  }
+};
+
+// ─── OFF : search (world.openfoodfacts.org — fallback mondial) ────────────────
+
+const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
+  try {
+    const res = await fetchWithTimeout(
+      `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`,
+      { headers: { "User-Agent": OFF_USER_AGENT } }
+    );
+    if (!res.ok) return [];
+    const data = await safeJson(res);
+    if (!data) return [];
+    return (data.products || [])
+      .filter((p: any) => p.product_name && (p.nutriments?.["energy-kcal_100g"] || 0) > 0)
+      .slice(0, pageSize)
+      .map(mapOFFProduct);
   } catch (e) {
     console.warn("OFF search error:", e);
     return [];
@@ -163,10 +188,30 @@ export const fetchProductByBarcode = async (barcode: string): Promise<OFFProduct
   };
 };
 
+// Déduplique par id (un même produit peut apparaître dans fr et world)
+const deduplicateById = (products: UnifiedProduct[]): UnifiedProduct[] => {
+  const seen = new Set<string>();
+  return products.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+};
+
 export const searchProductsByName = async (query: string): Promise<OFFProduct[]> => {
   if (!query || query.trim().length < 2) return [];
-  const results = await searchOFF(query);
-  return results.map((r) => ({
+
+  // 1. Priorité : fr.openfoodfacts.org (produits FR/EU)
+  const frResults = await searchOFF_FR(query, 20);
+
+  // 2. Fallback : world.openfoodfacts.org si résultats insuffisants
+  let allResults = frResults;
+  if (frResults.length < 5) {
+    const worldResults = await searchOFF(query, 20);
+    allResults = deduplicateById([...frResults, ...worldResults]);
+  }
+
+  return allResults.map((r) => ({
     code: r.id,
     product_name: r.name,
     image_url: r.imageUrl,
@@ -186,20 +231,32 @@ export const fetchNutritionData = async (
   const isBarcode = /^\d+$/.test(input);
 
   if (isBarcode) {
+    // Barcode : world OFF suffit (déjà très efficace)
     const offResult = await fetchOFFByBarcode(input);
     if (offResult) return { source: "OFF", products: [offResult] };
     console.warn("Barcode non trouvé dans OFF:", input);
     return { source: "OFF", products: [] };
 
   } else {
-    const offResults = await searchOFF(input);
+    // Recherche manuelle : fr → world → USDA (dernier recours)
+    const frResults = await searchOFF_FR(input, 20);
 
-    // USDA en complément si OFF renvoie peu de résultats
-    if (offResults.length < 3) {
-      const usdaResults = await searchUSDA(input, 10);
-      return { source: "OFF+USDA", products: [...offResults, ...usdaResults] };
+    if (frResults.length >= 5) {
+      return { source: "OFF-FR", products: frResults };
     }
 
-    return { source: "OFF", products: offResults };
+    const worldResults = await searchOFF(input, 20);
+    const offResults = deduplicateById([...frResults, ...worldResults]);
+
+    if (offResults.length >= 3) {
+      return { source: "OFF", products: offResults };
+    }
+
+    // USDA seulement si OFF (FR + world) insuffisant
+    const usdaResults = await searchUSDA(input, 10);
+    return {
+      source: "OFF+USDA",
+      products: deduplicateById([...offResults, ...usdaResults]),
+    };
   }
 };
