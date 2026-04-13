@@ -87,6 +87,20 @@ export interface UnifiedProduct {
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
 
+// Retourne la plus petite image disponible pour réduire la latence sur mobile
+const getOFFImageUrl = (p: any): string | undefined => {
+  // Priorité : small (200px) → thumb (100px) → front générique → image_url (400px en dernier recours)
+  return (
+    p.image_front_small_url ||
+    p.image_small_url ||
+    p.image_thumb_url ||
+    p.image_front_thumb_url ||
+    // Fallback : transformer l'URL 400px en 200px si possible
+    (p.image_url ? p.image_url.replace(/\.400\.jpg$/, ".200.jpg") : undefined) ||
+    p.image_url
+  );
+};
+
 const mapOFFProduct = (p: any): UnifiedProduct => ({
   id: p.code || Math.random().toString(),
   name: p.product_name || "Inconnu",
@@ -94,7 +108,7 @@ const mapOFFProduct = (p: any): UnifiedProduct => ({
   proteinsPer100g: p.nutriments?.proteins_100g || 0,
   carbsPer100g: p.nutriments?.carbohydrates_100g || 0,
   fatPer100g: p.nutriments?.fat_100g || 0,
-  imageUrl: p.image_url,
+  imageUrl: getOFFImageUrl(p),
   source: "OFF" as const,
   servingQuantity: p.serving_quantity || 100,
 });
