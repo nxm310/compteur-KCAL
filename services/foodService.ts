@@ -1,8 +1,11 @@
 const OFF_BASE = "https://world.openfoodfacts.org";
-const OFF_FR_BASE = "https://fr.openfoodfacts.org"; // Priorité FR/EU pour recherches manuelles
+const OFF_FR_BASE = "https://fr.openfoodfacts.org";
 const OFF_USER_AGENT = "CaloTrack - WebApp - Version 1.0";
 const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
 const USDA_API_KEY = "SBFfcU1dYSIQkGUKBUstxhJUkJVim2DqaWbnBd0J";
+
+// Proxy CORS de secours — utilisé uniquement si la requête directe échoue (iOS Safari)
+const CORS_PROXY = "https://corsproxy.io/?url=";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -31,6 +34,25 @@ const fetchWithTimeout = async (
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(id);
+  }
+};
+
+// Fetch avec fallback proxy CORS automatique si la requête directe est bloquée (CORS/503)
+const fetchWithCORSFallback = async (
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 8000
+): Promise<Response> => {
+  try {
+    const res = await fetchWithTimeout(url, options, timeoutMs);
+    // 503 = souvent le signe d'un blocage CORS côté serveur sur iOS
+    if (res.status === 503) throw new Error(`HTTP 503`);
+    return res;
+  } catch (e) {
+    // Retry via proxy CORS (sans User-Agent — le proxy ne le transmet pas toujours)
+    console.warn("Requête directe échouée, retry via proxy CORS:", url);
+    const proxied = `${CORS_PROXY}${encodeURIComponent(url)}`;
+    return fetchWithTimeout(proxied, {}, timeoutMs);
   }
 };
 
@@ -83,10 +105,10 @@ const mapUSDAProduct = (p: any): UnifiedProduct => {
   return {
     id: String(p.fdcId || Math.random()),
     name: p.description || "Inconnu",
-    kcalPer100g: get(1008),       // Energy (kcal)
-    proteinsPer100g: get(1003),   // Protein
-    carbsPer100g: get(1005),      // Carbohydrates
-    fatPer100g: get(1004),        // Total fat
+    kcalPer100g: get(1008),
+    proteinsPer100g: get(1003),
+    carbsPer100g: get(1005),
+    fatPer100g: get(1004),
     imageUrl: undefined,
     source: "USDA" as const,
     servingQuantity: 100,
@@ -97,7 +119,7 @@ const mapUSDAProduct = (p: any): UnifiedProduct => {
 
 const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
   try {
-    const res = await fetchWithTimeout(
+    const res = await fetchWithCORSFallback(
       `${OFF_BASE}/api/v2/product/${barcode}.json`,
       { headers: { "User-Agent": OFF_USER_AGENT } }
     );
@@ -111,14 +133,12 @@ const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null
   }
 };
 
-// ─── OFF : search (fr.openfoodfacts.org — priorité EU/FR) ────────────────────
+// ─── OFF : search FR (fr.openfoodfacts.org — priorité EU/FR) ─────────────────
 
 const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
-    const res = await fetchWithTimeout(
-      `${OFF_FR_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`,
-      { headers: { "User-Agent": OFF_USER_AGENT } }
-    );
+    const url = `${OFF_FR_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`;
+    const res = await fetchWithCORSFallback(url, { headers: { "User-Agent": OFF_USER_AGENT } });
     if (!res.ok) return [];
     const data = await safeJson(res);
     if (!data) return [];
@@ -132,14 +152,12 @@ const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduc
   }
 };
 
-// ─── OFF : search (world.openfoodfacts.org — fallback mondial) ────────────────
+// ─── OFF : search world (world.openfoodfacts.org — fallback mondial) ──────────
 
 const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
-    const res = await fetchWithTimeout(
-      `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`,
-      { headers: { "User-Agent": OFF_USER_AGENT } }
-    );
+    const url = `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`;
+    const res = await fetchWithCORSFallback(url, { headers: { "User-Agent": OFF_USER_AGENT } });
     if (!res.ok) return [];
     const data = await safeJson(res);
     if (!data) return [];
@@ -158,7 +176,7 @@ const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]
 const searchUSDA = async (query: string, limit = 10): Promise<UnifiedProduct[]> => {
   try {
     const url = `${USDA_BASE}/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(query)}&pageSize=${limit}&dataType=Foundation,SR%20Legacy,Branded`;
-    const res = await fetchWithTimeout(url);
+    const res = await fetchWithCORSFallback(url);
     if (!res.ok) return [];
     const data = await safeJson(res);
     if (!data?.foods) return [];
@@ -167,6 +185,17 @@ const searchUSDA = async (query: string, limit = 10): Promise<UnifiedProduct[]> 
     console.warn("USDA search error:", e);
     return [];
   }
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const deduplicateById = (products: UnifiedProduct[]): UnifiedProduct[] => {
+  const seen = new Set<string>();
+  return products.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
 };
 
 // ─── API publique ─────────────────────────────────────────────────────────────
@@ -188,28 +217,15 @@ export const fetchProductByBarcode = async (barcode: string): Promise<OFFProduct
   };
 };
 
-// Déduplique par id (un même produit peut apparaître dans fr et world)
-const deduplicateById = (products: UnifiedProduct[]): UnifiedProduct[] => {
-  const seen = new Set<string>();
-  return products.filter((p) => {
-    if (seen.has(p.id)) return false;
-    seen.add(p.id);
-    return true;
-  });
-};
-
 export const searchProductsByName = async (query: string): Promise<OFFProduct[]> => {
   if (!query || query.trim().length < 2) return [];
 
-  // 1. Priorité : fr.openfoodfacts.org (produits FR/EU)
-  const frResults = await searchOFF_FR(query, 20);
+  const [frResults, worldResults] = await Promise.all([
+    searchOFF_FR(query, 20),
+    searchOFF(query, 20),
+  ]);
 
-  // 2. Fallback : world.openfoodfacts.org si résultats insuffisants
-  let allResults = frResults;
-  if (frResults.length < 5) {
-    const worldResults = await searchOFF(query, 20);
-    allResults = deduplicateById([...frResults, ...worldResults]);
-  }
+  const allResults = deduplicateById([...frResults, ...worldResults]);
 
   return allResults.map((r) => ({
     code: r.id,
@@ -231,15 +247,13 @@ export const fetchNutritionData = async (
   const isBarcode = /^\d+$/.test(input);
 
   if (isBarcode) {
-    // Barcode : world OFF suffit (déjà très efficace)
     const offResult = await fetchOFFByBarcode(input);
     if (offResult) return { source: "OFF", products: [offResult] };
     console.warn("Barcode non trouvé dans OFF:", input);
     return { source: "OFF", products: [] };
 
   } else {
-    // Recherche manuelle : FR + world en parallèle, USDA en dernier recours
-    // Parallèle = une seule latence réseau au lieu de deux séquentielles (crucial sur mobile)
+    // FR + world en parallèle, FR en priorité dans les résultats
     const [frResults, worldResults] = await Promise.all([
       searchOFF_FR(input, 20),
       searchOFF(input, 20),
@@ -247,14 +261,13 @@ export const fetchNutritionData = async (
 
     console.log("🇫🇷 OFF-FR:", frResults.length, "| 🌍 OFF-world:", worldResults.length);
 
-    // FR en tête, world en complément (dédupliqué)
     const offResults = deduplicateById([...frResults, ...worldResults]);
 
     if (offResults.length >= 3) {
       return { source: "OFF", products: offResults };
     }
 
-    // USDA seulement si OFF (FR + world) insuffisant
+    // USDA uniquement si OFF (FR + world) insuffisant
     const usdaResults = await searchUSDA(input, 10);
     return {
       source: "OFF+USDA",
