@@ -238,16 +238,16 @@ export const fetchNutritionData = async (
     return { source: "OFF", products: [] };
 
   } else {
-    // Recherche manuelle : fr → world → USDA (dernier recours)
-    const frResults = await searchOFF_FR(input, 20);
+    // Recherche manuelle : FR + world en parallèle, USDA en dernier recours
+    // Parallèle = une seule latence réseau au lieu de deux séquentielles (crucial sur mobile)
+    const [frResults, worldResults] = await Promise.all([
+      searchOFF_FR(input, 20),
+      searchOFF(input, 20),
+    ]);
 
-    console.log("🔍 searchOFF_FR →", frResults.length, "résultats pour:", input);
+    console.log("🇫🇷 OFF-FR:", frResults.length, "| 🌍 OFF-world:", worldResults.length);
 
-    if (frResults.length >= 5) {
-      return { source: "OFF-FR", products: frResults };
-    }
-
-    const worldResults = await searchOFF(input, 20);
+    // FR en tête, world en complément (dédupliqué)
     const offResults = deduplicateById([...frResults, ...worldResults]);
 
     if (offResults.length >= 3) {
