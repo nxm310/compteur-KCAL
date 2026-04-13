@@ -241,6 +241,8 @@ export const fetchNutritionData = async (
     // Recherche manuelle : fr → world → USDA (dernier recours)
     const frResults = await searchOFF_FR(input, 20);
 
+    console.log("🔍 searchOFF_FR →", frResults.length, "résultats pour:", input);
+
     if (frResults.length >= 5) {
       return { source: "OFF-FR", products: frResults };
     }
