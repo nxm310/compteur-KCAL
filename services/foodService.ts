@@ -153,11 +153,14 @@ const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduc
 };
 
 // ─── OFF : search world (world.openfoodfacts.org — fallback mondial) ──────────
+// Note : world bloque corsproxy.io avec 503 — on tente quand même en direct
+// (fonctionne sur desktop/Android), mais on ne le met plus en parallèle bloquant
 
 const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
     const url = `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`;
-    const res = await fetchWithCORSFallback(url, { headers: { "User-Agent": OFF_USER_AGENT } });
+    // Pas de fallback proxy pour world (il bloque corsproxy.io) — tentative directe uniquement
+    const res = await fetchWithTimeout(url, { headers: { "User-Agent": OFF_USER_AGENT } }, 6000);
     if (!res.ok) return [];
     const data = await safeJson(res);
     if (!data) return [];
@@ -166,7 +169,7 @@ const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]
       .slice(0, pageSize)
       .map(mapOFFProduct);
   } catch (e) {
-    console.warn("OFF search error:", e);
+    // Silencieux — world peut échouer sur iOS, FR suffit
     return [];
   }
 };
@@ -253,13 +256,21 @@ export const fetchNutritionData = async (
     return { source: "OFF", products: [] };
 
   } else {
-    // FR + world en parallèle, FR en priorité dans les résultats
-    const [frResults, worldResults] = await Promise.all([
-      searchOFF_FR(input, 20),
-      searchOFF(input, 20),
-    ]);
+    // Stratégie : FR en priorité (fonctionne sur iOS via proxy CORS)
+    // World lancé en parallèle mais non-bloquant (peut échouer sur iOS, c'est OK)
+    const worldPromise = searchOFF(input, 20); // lancé mais pas encore attendu
 
-    console.log("🇫🇷 OFF-FR:", frResults.length, "| 🌍 OFF-world:", worldResults.length);
+    const frResults = await searchOFF_FR(input, 20);
+    console.log("🇫🇷 OFF-FR:", frResults.length);
+
+    // Si FR a assez de résultats, on n'attend même pas world
+    if (frResults.length >= 5) {
+      return { source: "OFF-FR", products: frResults };
+    }
+
+    // FR insuffisant → on attend world (il a eu le même temps que FR pour répondre)
+    const worldResults = await worldPromise;
+    console.log("🌍 OFF-world:", worldResults.length);
 
     const offResults = deduplicateById([...frResults, ...worldResults]);
 
