@@ -44,7 +44,9 @@ import {
   Upload,
   Zap,
   ChevronDown,
-  UserCheck
+  UserCheck,
+  Search,
+  Star,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -207,8 +209,6 @@ export default function App() {
       const saved = localStorage.getItem("calo_meals_v2");
       if (!saved) return {};
       const parsed = JSON.parse(saved);
-      
-      // Migration: Update breakfast icon from Sun to Croissant
       Object.keys(parsed).forEach(date => {
         parsed[date] = parsed[date].map((meal: any) => {
           if (meal.title === "Petit-déj" && meal.icon === "Sun") {
@@ -217,7 +217,6 @@ export default function App() {
           return meal;
         });
       });
-      
       return parsed;
     } catch (e) {
       console.error("Error parsing meals:", e);
@@ -266,6 +265,30 @@ export default function App() {
     }));
   };
 
+  // ─── Favorites & History search ──────────────────────────────────────────
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("calo_favorites_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyTab, setHistoryTab] = useState<"recent" | "favorites">("recent");
+
+  useEffect(() => {
+    localStorage.setItem("calo_favorites_v2", JSON.stringify(favorites));
+  }, [favorites]);
+
+  const toggleFavorite = useCallback((productName: string) => {
+    setFavorites(prev =>
+      prev.includes(productName)
+        ? prev.filter(n => n !== productName)
+        : [...prev, productName]
+    );
+  }, []);
+
+  // ─── Scanner & UI state ───────────────────────────────────────────────────
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<ScannerHandle>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -302,11 +325,18 @@ export default function App() {
   const [showUpdateAvailable, setShowUpdateAvailable] = useState(false);
 
   useEffect(() => {
-  // Écoute l'événement déclenché par le Service Worker (main.tsx)
-  const handler = () => setShowUpdateAvailable(true);
-  window.addEventListener('pwa-update-available', handler);
-  return () => window.removeEventListener('pwa-update-available', handler);
-}, []);
+    const handler = () => setShowUpdateAvailable(true);
+    window.addEventListener('pwa-update-available', handler);
+    return () => window.removeEventListener('pwa-update-available', handler);
+  }, []);
+
+  // Chauffe la connexion vers OFF dès le montage — évite le cold-start au premier scan
+  useEffect(() => {
+    fetch('https://fr.openfoodfacts.org/api/v2/search?search_terms=a&json=1&page_size=1')
+      .catch(() => {});
+    fetch('https://world.openfoodfacts.org/api/v2/search?search_terms=a&json=1&page_size=1')
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (scannedProduct) {
@@ -318,6 +348,19 @@ export default function App() {
     }
   }, [scannedProduct]);
 
+  // ─── Filtered history ─────────────────────────────────────────────────────
+  const filteredHistory = useMemo(() => {
+    let items = historyTab === "favorites"
+      ? productHistory.filter(p => favorites.includes(p.name))
+      : productHistory;
+    if (historySearch.trim()) {
+      const q = historySearch.toLowerCase();
+      items = items.filter(p => p.name.toLowerCase().includes(q));
+    }
+    return items;
+  }, [productHistory, favorites, historyTab, historySearch]);
+
+  // ─── Totals ───────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
     return meals.reduce((acc, meal) => {
       const mealTotals = meal.products.reduce((mAcc, p) => {
@@ -329,7 +372,6 @@ export default function App() {
           fat: mAcc.fat + (p.fatPer100g || 0) * factor,
         };
       }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
-      
       return {
         kcal: acc.kcal + mealTotals.kcal,
         protein: acc.protein + mealTotals.protein,
@@ -346,28 +388,24 @@ export default function App() {
   const remaining = profile.calorieGoal - totals.kcal + totalBurned;
   const progress = Math.min((totals.kcal / (profile.calorieGoal + totalBurned)) * 100, 100);
 
+  // ─── Scan success handler ─────────────────────────────────────────────────
   const handleScanSuccess = useCallback(async (input: string) => {
     if (isLoading || isProductModalOpen) return;
-    
     setIsLoading(true);
     try {
       const result = await fetchNutritionData(input);
-      
       if (result.products && result.products.length > 0) {
         if (result.products.length === 1) {
-          // Un seul résultat (souvent le cas pour un code-barres)
           setScannedProduct(result.products[0]);
           setIsScannerOpen(false);
           setIsProductModalOpen(true);
           setTempQuantity(result.products[0].servingQuantity || 100);
         } else {
-          // Plusieurs résultats (recherche par texte)
           setSearchResults(result.products);
           setIsScannerOpen(false);
           setIsSearchModalOpen(true);
         }
       } else {
-        // Fallback manuel si rien n'est trouvé (sans erreur bloquante)
         setTempName(input);
         setScannedProduct({
           id: Math.random().toString(),
@@ -385,7 +423,6 @@ export default function App() {
       }
     } catch (error) {
       console.error("Erreur technique de recherche:", error);
-      // Fallback en cas d'erreur réseau/API
       setTempName(input);
       setScannedProduct({
         id: Math.random().toString(),
@@ -405,6 +442,25 @@ export default function App() {
     }
   }, [isLoading, isProductModalOpen]);
 
+  // ─── Open product modal from history item ─────────────────────────────────
+  const openProductFromHistory = useCallback((product: LoggedProduct, mealIdx?: number) => {
+    setScannedProduct({
+      id: product.id,
+      name: product.name,
+      kcalPer100g: product.kcalPer100g,
+      proteinsPer100g: product.proteinPer100g,
+      carbsPer100g: product.carbsPer100g,
+      fatPer100g: product.fatPer100g,
+      imageUrl: product.imageUrl,
+      source: 'OFF',
+      servingQuantity: product.quantityGrams || 100
+    });
+    setTempQuantity(product.quantityGrams || 100);
+    setActiveMealIndex(mealIdx !== undefined ? mealIdx : null);
+    setIsProductModalOpen(true);
+  }, []);
+
+  // ─── Add product to meal ──────────────────────────────────────────────────
   const addProductToMeal = () => {
     if (scannedProduct && activeMealIndex !== null) {
       const newProduct: LoggedProduct = {
@@ -417,17 +473,13 @@ export default function App() {
         quantityGrams: tempQuantity,
         imageUrl: scannedProduct.imageUrl,
       };
-
       const updatedMeals = [...meals];
       updatedMeals[activeMealIndex].products.push(newProduct);
       setMeals(updatedMeals);
-
-      // Add to history
       setProductHistory(prev => {
         const filtered = prev.filter(p => p.name !== newProduct.name);
-        return [newProduct, ...filtered].slice(0, 50); // Keep last 50
+        return [newProduct, ...filtered].slice(0, 50);
       });
-
       setIsProductModalOpen(false);
       setScannedProduct(null);
     }
@@ -445,13 +497,10 @@ export default function App() {
         quantityGrams: tempQuantity,
         imageUrl: scannedProduct.imageUrl,
       };
-
-      // Add to history
       setProductHistory(prev => {
         const filtered = prev.filter(p => p.name !== newProduct.name);
-        return [newProduct, ...filtered].slice(0, 50); // Keep last 50
+        return [newProduct, ...filtered].slice(0, 50);
       });
-
       setIsProductModalOpen(false);
       setScannedProduct(null);
     }
@@ -463,6 +512,10 @@ export default function App() {
       const updatedMeals = [...meals];
       updatedMeals[activeMealIndex].products.push(newProduct);
       setMeals(updatedMeals);
+      setIsScannerOpen(false);
+    } else {
+      // Pas de repas sélectionné → ouvrir le modal produit pour choisir
+      openProductFromHistory(product);
       setIsScannerOpen(false);
     }
   };
@@ -501,11 +554,12 @@ export default function App() {
   };
 
   const [selectedMealForView, setSelectedMealForView] = useState<number | null>(null);
+  const [mealHistorySearch, setMealHistorySearch] = useState("");
+  const [mealHistoryTab, setMealHistoryTab] = useState<"recent" | "favorites">("recent");
 
-  // ─── Sauvegarde / Restauration ───────────────────────────────────────────
-
+  // ─── Export / Import ──────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
-    const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2"];
+    const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2", "calo_favorites_v2"];
     const backup: Record<string, any> = { exportedAt: new Date().toISOString(), version: 2 };
     KEYS.forEach((k) => {
       try { backup[k] = JSON.parse(localStorage.getItem(k) || "null"); } catch { backup[k] = null; }
@@ -528,7 +582,7 @@ export default function App() {
       try {
         const backup = JSON.parse(ev.target?.result as string);
         if (!backup.version) throw new Error("Fichier invalide");
-        const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2"];
+        const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2", "calo_favorites_v2"];
         KEYS.forEach((k) => {
           if (backup[k] !== null && backup[k] !== undefined) {
             localStorage.setItem(k, JSON.stringify(backup[k]));
@@ -543,6 +597,80 @@ export default function App() {
     e.target.value = "";
   }, []);
 
+  // ─── History item card (réutilisé dans 2 dialogs) ────────────────────────
+  const HistoryItem = ({ product, onOpen, showMealButtons = false, mealIdx }: {
+    product: LoggedProduct;
+    onOpen: () => void;
+    showMealButtons?: boolean;
+    mealIdx?: number;
+  }) => {
+    const isFav = favorites.includes(product.name);
+    return (
+      <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-100 group">
+        {/* Clickable main area */}
+        <button className="flex items-center gap-2.5 flex-1 min-w-0 text-left" onClick={onOpen}>
+          <div className="w-11 h-11 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100 shadow-sm">
+            {product.imageUrl ? (
+              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+            ) : (
+              <Apple className="w-5 h-5 text-slate-300" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">{product.name}</p>
+            <p className="text-[10px] text-slate-400 font-medium">
+              {product.kcalPer100g} kcal/100g · {product.quantityGrams}g
+            </p>
+          </div>
+        </button>
+        {/* Meal quick-add buttons (visible in scanner dialog) */}
+        {showMealButtons && (
+          <div className="flex gap-1">
+            {meals.map((meal, idx) => {
+              const Icon = ICON_MAP[meal.icon] || Apple;
+              return (
+                <Button
+                  key={idx}
+                  size="icon"
+                  variant="secondary"
+                  className="w-7 h-7 rounded-lg bg-white hover:bg-orange-500 hover:text-white transition-colors"
+                  onClick={() => {
+                    const newP = { ...product, id: Math.random().toString(36).substr(2, 9) };
+                    const updatedMeals = [...meals];
+                    updatedMeals[idx].products.push(newP);
+                    setMeals(updatedMeals);
+                  }}
+                >
+                  <Icon className="w-3 h-3" />
+                </Button>
+              );
+            })}
+          </div>
+        )}
+        {/* Star */}
+        <button
+          onClick={() => toggleFavorite(product.name)}
+          className="p-1.5 rounded-xl hover:bg-yellow-50 transition-colors flex-shrink-0"
+        >
+          <Star
+            className={cn(
+              "w-4 h-4 transition-colors",
+              isFav ? "fill-yellow-400 text-yellow-400" : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
+            )}
+          />
+        </button>
+        {/* Delete */}
+        <button
+          onClick={() => removeFromHistory(product.id)}
+          className="p-1.5 rounded-xl hover:bg-red-50 text-slate-300 hover:text-red-400 transition-colors flex-shrink-0"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
       <AnimatePresence>
@@ -561,14 +689,11 @@ export default function App() {
               <Button
                 size="sm"
                 onClick={() => {
-  navigator.serviceWorker.getRegistration().then(reg => {
-    if (reg?.waiting) {
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-    } else {
-      window.location.reload();
-    }
-  });
-}}
+                  navigator.serviceWorker.getRegistration().then(reg => {
+                    if (reg?.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    else window.location.reload();
+                  });
+                }}
                 className="bg-white text-indigo-600 hover:bg-indigo-50 rounded-full h-8 px-4 font-bold text-xs flex items-center gap-2 border-none shadow-sm"
               >
                 <RefreshCw className="w-3 h-3" />
@@ -578,23 +703,24 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
       {/* Header */}
       <header className="px-6 pt-8 pb-6 flex flex-col items-center relative bg-white border-b border-slate-100">
         <div className="w-full flex justify-between items-center">
           <div className="flex items-center">
             {view === "dashboard" ? (
-              <Button 
-                variant="secondary" 
-                size="icon" 
+              <Button
+                variant="secondary"
+                size="icon"
                 className="rounded-2xl w-10 h-10 bg-slate-50 border border-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-all"
                 onClick={() => setIsHistoryOpen(true)}
               >
                 <History className="w-5 h-5" />
               </Button>
             ) : (
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="rounded-full"
                 onClick={() => setView("dashboard")}
               >
@@ -609,26 +735,24 @@ export default function App() {
             </h1>
             {view === "dashboard" && (
               <div className="flex items-center justify-center gap-2 mt-3">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
+                <Button
+                  variant="ghost"
+                  size="icon"
                   className="h-6 w-6 rounded-full text-slate-300 hover:text-orange-500 hover:bg-orange-50 transition-all"
                   onClick={() => setCurrentDate(subDays(currentDate, 1))}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                
-                <button 
+                <button
                   className="text-xs font-bold text-slate-400 hover:text-orange-600 transition-colors flex items-center gap-1.5 bg-slate-50 px-3 py-1 rounded-full border border-slate-100"
                   onClick={() => setIsDatePickerOpen(true)}
                 >
                   <CalendarIcon className="w-3 h-3" />
                   {format(currentDate, "d MMMM yyyy", { locale: fr })}
                 </button>
-
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
+                <Button
+                  variant="ghost"
+                  size="icon"
                   className="h-6 w-6 rounded-full text-slate-300 hover:text-orange-500 hover:bg-orange-50 transition-all"
                   onClick={() => setCurrentDate(addDays(currentDate, 1))}
                 >
@@ -639,13 +763,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center">
-            <Button 
-              variant="secondary" 
-              size="icon" 
+            <Button
+              variant="secondary"
+              size="icon"
               className={cn(
                 "rounded-2xl w-10 h-10 transition-all border",
-                view === "profile" 
-                  ? "bg-indigo-500 text-white border-indigo-600 shadow-lg shadow-indigo-200" 
+                view === "profile"
+                  ? "bg-indigo-500 text-white border-indigo-600 shadow-lg shadow-indigo-200"
                   : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
               )}
               onClick={() => setView(view === "profile" ? "dashboard" : "profile")}
@@ -658,7 +782,7 @@ export default function App() {
 
       <AnimatePresence mode="wait">
         {view === "dashboard" ? (
-          <motion.main 
+          <motion.main
             key="dashboard"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -672,58 +796,38 @@ export default function App() {
               transition={{ duration: 0.5 }}
             >
               <Card className="bg-gradient-to-br from-white via-white to-indigo-50/50 border-none shadow-xl rounded-[2.5rem] overflow-hidden relative">
-                {/* Decorative background element */}
                 <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-100/50 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-orange-100/30 rounded-full blur-3xl pointer-events-none" />
-                
                 <CardContent className="p-7 space-y-8 relative z-10">
                   <div className="flex items-center gap-8">
-                    {/* Circular Progress Chart */}
                     <div className="relative w-32 h-32 flex-shrink-0">
                       <svg viewBox="0 0 100 100" className="w-full h-full">
-                        {/* Background Rings */}
                         <circle cx="50" cy="50" r="45" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
                         <circle cx="50" cy="50" r="37" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
                         <circle cx="50" cy="50" r="29" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
                         <circle cx="50" cy="50" r="18" stroke="#E2E8F0" strokeWidth="10" fill="transparent" strokeOpacity="0.5" />
-
-                        {/* Protéine (Purple) - Outermost */}
-                        <motion.circle
-                          cx="50" cy="50" r="45"
-                          stroke="#C084FC" strokeWidth="6" fill="transparent"
+                        <motion.circle cx="50" cy="50" r="45" stroke="#C084FC" strokeWidth="6" fill="transparent"
                           strokeDasharray={2 * Math.PI * 45}
                           initial={{ strokeDashoffset: 2 * Math.PI * 45 }}
                           animate={{ strokeDashoffset: (2 * Math.PI * 45) * (1 - Math.min(totals.protein / profile.proteinGoal, 1)) }}
                           strokeLinecap="round" transform="rotate(-90 50 50)"
                           transition={{ duration: 1, ease: "easeOut" }}
                         />
-                        
-                        {/* Graisses (Orange) */}
-                        <motion.circle
-                          cx="50" cy="50" r="37"
-                          stroke="#FDBA74" strokeWidth="6" fill="transparent"
+                        <motion.circle cx="50" cy="50" r="37" stroke="#FDBA74" strokeWidth="6" fill="transparent"
                           strokeDasharray={2 * Math.PI * 37}
                           initial={{ strokeDashoffset: 2 * Math.PI * 37 }}
                           animate={{ strokeDashoffset: (2 * Math.PI * 37) * (1 - Math.min(totals.fat / profile.fatGoal, 1)) }}
                           strokeLinecap="round" transform="rotate(-90 50 50)"
                           transition={{ duration: 1, ease: "easeOut", delay: 0.1 }}
                         />
-
-                        {/* Glucides (Blue) */}
-                        <motion.circle
-                          cx="50" cy="50" r="29"
-                          stroke="#38BDF8" strokeWidth="6" fill="transparent"
+                        <motion.circle cx="50" cy="50" r="29" stroke="#38BDF8" strokeWidth="6" fill="transparent"
                           strokeDasharray={2 * Math.PI * 29}
                           initial={{ strokeDashoffset: 2 * Math.PI * 29 }}
                           animate={{ strokeDashoffset: (2 * Math.PI * 29) * (1 - Math.min(totals.carbs / profile.carbsGoal, 1)) }}
                           strokeLinecap="round" transform="rotate(-90 50 50)"
                           transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
                         />
-
-                        {/* Calories (Green) - Innermost & Thickest */}
-                        <motion.circle
-                          cx="50" cy="50" r="18"
-                          stroke="#4ADE80" strokeWidth="10" fill="transparent"
+                        <motion.circle cx="50" cy="50" r="18" stroke="#4ADE80" strokeWidth="10" fill="transparent"
                           strokeDasharray={2 * Math.PI * 18}
                           initial={{ strokeDashoffset: 2 * Math.PI * 18 }}
                           animate={{ strokeDashoffset: (2 * Math.PI * 18) * (1 - Math.min(totals.kcal / profile.calorieGoal, 1)) }}
@@ -732,40 +836,29 @@ export default function App() {
                         />
                       </svg>
                     </div>
-
-                    {/* Calorie Text */}
                     <div className="flex flex-col">
                       <span className="text-[#4ADE80] font-bold text-lg">Calories</span>
                       <span className="text-3xl font-black text-slate-900">{totals.kcal.toFixed(0)} kcal</span>
                       <span className="text-slate-400 text-sm font-medium">{remaining > 0 ? `${remaining.toFixed(0)} kcal restantes` : "Objectif atteint !"}</span>
                     </div>
                   </div>
-
-                  {/* Macros Grid */}
                   <div className="grid grid-cols-3 gap-4 pt-2">
                     <div className="flex flex-col">
                       <span className="text-[#C084FC] font-bold text-sm">Protéine</span>
                       <span className="text-xl font-black text-slate-800">{totals.protein.toFixed(0)} g</span>
-                      <span className="text-slate-300 text-xs font-medium">
-                        {Math.max(0, profile.proteinGoal - totals.protein).toFixed(0)} g restantes
-                      </span>
+                      <span className="text-slate-300 text-xs font-medium">{Math.max(0, profile.proteinGoal - totals.protein).toFixed(0)} g restantes</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[#FDBA74] font-bold text-sm">Graisses</span>
                       <span className="text-xl font-black text-slate-800">{totals.fat.toFixed(0)} g</span>
-                      <span className="text-slate-300 text-xs font-medium">
-                        {Math.max(0, profile.fatGoal - totals.fat).toFixed(0)} g restantes
-                      </span>
+                      <span className="text-slate-300 text-xs font-medium">{Math.max(0, profile.fatGoal - totals.fat).toFixed(0)} g restantes</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[#38BDF8] font-bold text-sm">Glucides</span>
                       <span className="text-xl font-black text-slate-800">{totals.carbs.toFixed(0)} g</span>
-                      <span className="text-slate-300 text-xs font-medium">
-                        {Math.max(0, profile.carbsGoal - totals.carbs).toFixed(0)} g restantes
-                      </span>
+                      <span className="text-slate-300 text-xs font-medium">{Math.max(0, profile.carbsGoal - totals.carbs).toFixed(0)} g restantes</span>
                     </div>
                   </div>
-
                   <div className="flex items-center justify-between bg-indigo-50/50 p-4 rounded-3xl border border-indigo-100/50">
                     <div className="flex items-center gap-3">
                       <div className="bg-indigo-500 p-2 rounded-xl shadow-lg shadow-indigo-200">
@@ -797,7 +890,7 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
                   >
-                    <Card 
+                    <Card
                       className="border-none shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-[2rem] cursor-pointer overflow-hidden"
                       onClick={() => setSelectedMealForView(index)}
                     >
@@ -822,6 +915,26 @@ export default function App() {
               })}
             </div>
 
+            {/* Scan Button — inline, au-dessus des activités */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.45 }}
+            >
+              <button
+                onClick={() => {
+                  setActiveMealIndex(null);
+                  setIsScannerOpen(true);
+                }}
+                className="w-full h-16 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-orange-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              >
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Scan className="w-5 h-5" />
+                </div>
+                Scanner un produit
+              </button>
+            </motion.div>
+
             {/* Activities Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -844,7 +957,7 @@ export default function App() {
                   <p className="text-lg font-bold opacity-90 mb-6">
                     Calories Actives: <span className="text-2xl">{totalBurned.toFixed(0)}</span> kcal
                   </p>
-                  <Button 
+                  <Button
                     className="w-full bg-white text-[#007AFF] hover:bg-slate-100 rounded-2xl h-14 font-black text-xl shadow-md"
                     onClick={() => setIsActivityModalOpen(true)}
                   >
@@ -855,7 +968,7 @@ export default function App() {
             </motion.div>
           </motion.main>
         ) : (
-          <motion.main 
+          <motion.main
             key="profile"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -863,8 +976,6 @@ export default function App() {
             className="px-6 space-y-6 max-w-md mx-auto mt-6"
           >
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-6">
-
-              {/* ── Identité ── */}
               <div className="space-y-4">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                   <UserCheck className="w-5 h-5 text-violet-500" />
@@ -933,7 +1044,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ── Calories ── */}
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                   <Flame className="w-5 h-5 text-orange-500" />
@@ -949,12 +1059,8 @@ export default function App() {
                   const rec = computeRecommendations(profile);
                   return (
                     <div className="bg-orange-50 rounded-2xl p-3 space-y-1">
-                      <p className="text-xs font-bold text-orange-600">
-                        💡 Dépense estimée (TDEE) : {rec.tdee} kcal/jour
-                      </p>
-                      <p className="text-[10px] text-orange-400">
-                        Métabolisme de base : {rec.bmr} kcal · {ACTIVITY_LABELS[profile.activityLevel]}
-                      </p>
+                      <p className="text-xs font-bold text-orange-600">💡 Dépense estimée (TDEE) : {rec.tdee} kcal/jour</p>
+                      <p className="text-[10px] text-orange-400">Métabolisme de base : {rec.bmr} kcal · {ACTIVITY_LABELS[profile.activityLevel]}</p>
                       <button onClick={() => setProfile({...profile, calorieGoal: rec.tdee})}
                         className="text-[10px] font-bold text-orange-500 underline">
                         Utiliser cette valeur
@@ -964,7 +1070,6 @@ export default function App() {
                 })()}
               </div>
 
-              {/* ── Macros ── */}
               <div className="space-y-4 pt-4 border-t">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -1008,33 +1113,24 @@ export default function App() {
                 })()}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-[10px] text-slate-500 flex items-center gap-1">
-                      <Dna className="w-3 h-3" /> Prot
-                    </Label>
+                    <Label className="text-[10px] text-slate-500 flex items-center gap-1"><Dna className="w-3 h-3" /> Prot</Label>
                     <Input type="number" value={profile.proteinGoal}
                       onChange={(e) => setProfile({...profile, proteinGoal: Number(e.target.value)})}
                       className="rounded-xl px-2" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] text-slate-500 flex items-center gap-1">
-                      <Wheat className="w-3 h-3" /> Gluc
-                    </Label>
+                    <Label className="text-[10px] text-slate-500 flex items-center gap-1"><Wheat className="w-3 h-3" /> Gluc</Label>
                     <Input type="number" value={profile.carbsGoal}
                       onChange={(e) => setProfile({...profile, carbsGoal: Number(e.target.value)})}
                       className="rounded-xl px-2" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] text-slate-500 flex items-center gap-1">
-                      <Droplets className="w-3 h-3" /> Lipi
-                    </Label>
+                    <Label className="text-[10px] text-slate-500 flex items-center gap-1"><Droplets className="w-3 h-3" /> Lipi</Label>
                     <Input type="number" value={profile.fatGoal}
                       onChange={(e) => setProfile({...profile, fatGoal: Number(e.target.value)})}
                       className="rounded-xl px-2" />
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-300 text-center">
-                  Les valeurs calculées sont modifiables manuellement
-                </p>
               </div>
 
               <Button
@@ -1046,14 +1142,13 @@ export default function App() {
               </Button>
             </Card>
 
-            {/* Sauvegarde & Restauration */}
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <Download className="w-5 h-5 text-emerald-500" />
                 Sauvegarde & Restauration
               </h3>
               <p className="text-xs text-slate-400">
-                Exporte toutes tes données (repas, activités, historique, profil) dans un fichier JSON local.
+                Exporte toutes tes données (repas, activités, historique, favoris, profil) dans un fichier JSON local.
               </p>
               <Button
                 className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-2xl h-12"
@@ -1083,127 +1178,124 @@ export default function App() {
                 ⚠️ La restauration remplace toutes les données existantes
               </p>
             </Card>
-
           </motion.main>
         )}
       </AnimatePresence>
 
-      {/* History Dialog */}
-      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+
+
+      {/* ─── History Dialog ─────────────────────────────────────────────────── */}
+      <Dialog open={isHistoryOpen} onOpenChange={(open) => { setIsHistoryOpen(open); if (!open) { setHistorySearch(""); } }}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
-          <div className="p-6 pb-4 border-b bg-white">
+          <div className="p-5 pb-0 border-b bg-white">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2 mb-4">
                 <History className="w-5 h-5 text-indigo-500" />
-                Historique des aliments
+                Historique & Favoris
               </DialogTitle>
             </DialogHeader>
+            {/* Search bar */}
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Rechercher un aliment..."
+                className="pl-9 rounded-xl h-10 bg-slate-50 border-slate-200"
+              />
+            </div>
+            {/* Tabs */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button
+                onClick={() => setHistoryTab("recent")}
+                className={cn(
+                  "h-9 rounded-xl text-sm font-bold transition-all",
+                  historyTab === "recent"
+                    ? "bg-indigo-500 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                )}
+              >
+                Récents ({productHistory.length})
+              </button>
+              <button
+                onClick={() => setHistoryTab("favorites")}
+                className={cn(
+                  "h-9 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5",
+                  historyTab === "favorites"
+                    ? "bg-yellow-400 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                )}
+              >
+                <Star className={cn("w-3.5 h-3.5", historyTab === "favorites" ? "fill-white" : "")} />
+                Favoris ({productHistory.filter(p => favorites.includes(p.name)).length})
+              </button>
+            </div>
           </div>
-          
-          <div className="overflow-y-auto p-6 pt-4 flex-1">
-            {productHistory.length > 0 ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vos aliments récents</p>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 text-[10px] text-slate-400 hover:text-red-500"
-                    onClick={() => setProductHistory([])}
-                  >
-                    Tout effacer
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 gap-3">
-                  {productHistory.map((product) => (
-                    <div
-                      key={product.id}
-                      className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 group"
+
+          <div className="overflow-y-auto p-5 flex-1">
+            {filteredHistory.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {historyTab === "favorites" ? "Vos favoris" : "Aliments récents"}
+                    {historySearch && ` · "${historySearch}"`}
+                  </p>
+                  {historyTab === "recent" && (
+                    <button
+                      className="text-[10px] text-slate-400 hover:text-red-500 font-bold transition-colors"
+                      onClick={() => setProductHistory([])}
                     >
-                      <div className="w-12 h-12 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
-                        {product.imageUrl ? (
-                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                        ) : (
-                          <Apple className="w-6 h-6 text-slate-300" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-700 truncate">{product.name}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">
-                          {product.kcalPer100g} kcal/100g • {product.quantityGrams}g
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col gap-1">
-                          <p className="text-[8px] font-bold text-slate-400 text-center">Ajouter à :</p>
-                          <div className="flex gap-1">
-                            {meals.map((meal, idx) => (
-                              <Button
-                                key={idx}
-                                size="icon"
-                                variant="secondary"
-                                className="w-7 h-7 rounded-lg bg-white hover:bg-orange-500 hover:text-white transition-colors"
-                                onClick={() => {
-                                  setScannedProduct({
-                                    id: product.id,
-                                    name: product.name,
-                                    kcalPer100g: product.kcalPer100g,
-                                    proteinsPer100g: product.proteinPer100g,
-                                    carbsPer100g: product.carbsPer100g,
-                                    fatPer100g: product.fatPer100g,
-                                    imageUrl: product.imageUrl,
-                                    source: 'OFF',
-                                    servingQuantity: 100
-                                  });
-                                  setTempQuantity(product.quantityGrams || 100);
-                                  setActiveMealIndex(idx);
-                                  setIsProductModalOpen(true);
-                                  setIsHistoryOpen(false);
-                                }}
-                              >
-                                {(() => {
-                                  const Icon = ICON_MAP[meal.icon] || Apple;
-                                  return <Icon className="w-3 h-3" />;
-                                })()}
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="w-8 h-8 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                          onClick={() => removeFromHistory(product.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                      Tout effacer
+                    </button>
+                  )}
                 </div>
+                {filteredHistory.map((product) => (
+                  <HistoryItem
+                    key={product.id}
+                    product={product}
+                    onOpen={() => {
+                      openProductFromHistory(product);
+                      setIsHistoryOpen(false);
+                    }}
+                  />
+                ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+              <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
-                  <History className="w-8 h-8 text-slate-200" />
+                  {historyTab === "favorites"
+                    ? <Star className="w-8 h-8 text-slate-200" />
+                    : <History className="w-8 h-8 text-slate-200" />
+                  }
                 </div>
                 <div className="space-y-1">
-                  <p className="font-bold text-slate-400">Aucun historique</p>
-                  <p className="text-xs text-slate-300">Vos aliments scannés apparaîtront ici.</p>
+                  <p className="font-bold text-slate-400">
+                    {historyTab === "favorites" ? "Aucun favori" : historySearch ? "Aucun résultat" : "Aucun historique"}
+                  </p>
+                  <p className="text-xs text-slate-300">
+                    {historyTab === "favorites"
+                      ? "Appuyez sur ⭐ pour mettre un produit en favori."
+                      : historySearch
+                        ? "Essayez un autre mot-clé."
+                        : "Vos aliments scannés apparaîtront ici."
+                    }
+                  </p>
                 </div>
               </div>
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Date Picker ────────────────────────────────────────────────────── */}
       <Dialog open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
             <DialogTitle>Choisir une date</DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <Input 
-              type="date" 
+            <Input
+              type="date"
               value={format(currentDate, "yyyy-MM-dd")}
               onChange={(e) => {
                 const newDate = parseISO(e.target.value);
@@ -1215,21 +1307,11 @@ export default function App() {
               className="rounded-xl text-lg h-12"
             />
             <div className="grid grid-cols-2 gap-3">
-              <Button 
-                variant="outline" 
-                className="rounded-xl"
-                onClick={() => {
-                  setCurrentDate(new Date());
-                  setIsDatePickerOpen(false);
-                }}
-              >
+              <Button variant="outline" className="rounded-xl"
+                onClick={() => { setCurrentDate(new Date()); setIsDatePickerOpen(false); }}>
                 Aujourd'hui
               </Button>
-              <Button 
-                variant="outline" 
-                className="rounded-xl"
-                onClick={() => setIsDatePickerOpen(false)}
-              >
+              <Button variant="outline" className="rounded-xl" onClick={() => setIsDatePickerOpen(false)}>
                 Annuler
               </Button>
             </div>
@@ -1237,7 +1319,7 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Search Results Dialog */}
+      {/* ─── Search Results Dialog ──────────────────────────────────────────── */}
       <Dialog open={isSearchModalOpen} onOpenChange={setIsSearchModalOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
           <div className="p-6 pb-4 border-b bg-white">
@@ -1248,7 +1330,6 @@ export default function App() {
               </DialogTitle>
             </DialogHeader>
           </div>
-          
           <div className="overflow-y-auto p-6 pt-4 flex-1">
             <div className="grid grid-cols-1 gap-3">
               {searchResults.map((product) => (
@@ -1275,7 +1356,7 @@ export default function App() {
                         {product.name}
                       </p>
                       <span className={cn(
-                        "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase",
+                        "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase flex-shrink-0",
                         product.source === 'USDA' ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
                       )}>
                         {product.source}
@@ -1288,26 +1369,16 @@ export default function App() {
                   <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-orange-500" />
                 </button>
               ))}
-              
               <div className="pt-4 border-t border-slate-100">
-                <p className="text-xs text-slate-400 text-center mb-3">
-                  Vous ne trouvez pas votre produit ?
-                </p>
-                <Button 
-                  variant="outline" 
+                <p className="text-xs text-slate-400 text-center mb-3">Vous ne trouvez pas votre produit ?</p>
+                <Button
+                  variant="outline"
                   className="w-full rounded-2xl border-dashed border-2"
                   onClick={() => {
-                    // Treat as manual entry
                     setScannedProduct({
-                      id: Math.random().toString(),
-                      name: tempName,
-                      kcalPer100g: 0,
-                      proteinsPer100g: 0,
-                      carbsPer100g: 0,
-                      fatPer100g: 0,
-                      imageUrl: "",
-                      source: 'OFF',
-                      servingQuantity: 100
+                      id: Math.random().toString(), name: tempName,
+                      kcalPer100g: 0, proteinsPer100g: 0, carbsPer100g: 0, fatPer100g: 0,
+                      imageUrl: "", source: 'OFF', servingQuantity: 100
                     });
                     setIsSearchModalOpen(false);
                     setIsProductModalOpen(true);
@@ -1321,65 +1392,48 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Scanner Dialog */}
+      {/* ─── Scanner Dialog ──────────────────────────────────────────────────── */}
       <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); }}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
           <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
-              <DialogTitle>Ajouter un aliment</DialogTitle>
+              <DialogTitle>
+                {activeMealIndex !== null
+                  ? `Ajouter au ${meals[activeMealIndex]?.title}`
+                  : "Scanner un produit"
+                }
+              </DialogTitle>
             </DialogHeader>
           </div>
-          
           <div className="overflow-y-auto p-6 pt-4 flex-1 space-y-6">
             <div className="space-y-2">
               <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scanner ou Saisir</h4>
-              <Scanner 
+              <Scanner
                 ref={scannerRef}
-                isOpen={isScannerOpen} 
-                onScanSuccess={handleScanSuccess} 
+                isOpen={isScannerOpen}
+                onScanSuccess={handleScanSuccess}
               />
             </div>
 
             {productHistory.length > 0 && (
               <div className="space-y-3 pt-4 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Historique récent</h4>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 text-[10px] text-slate-400 hover:text-red-500"
-                    onClick={() => setProductHistory([])}
-                  >
-                    Effacer
-                  </Button>
-                </div>
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Historique récent</h4>
                 <div className="grid grid-cols-1 gap-2">
                   {productHistory.slice(0, 10).map((product) => (
-                    <button
+                    <HistoryItem
                       key={product.id}
-                      onClick={() => addHistoryProductToMeal(product)}
-                      className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors border border-slate-100 text-left group"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
-                        {product.imageUrl ? (
-                          <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                        ) : (
-                          <Apple className="w-4 h-4 text-slate-300" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">{product.name}</p>
-                        <p className="text-[9px] text-slate-400 font-medium">
-                          {product.kcalPer100g} kcal • {product.quantityGrams}g
-                        </p>
-                      </div>
-                      <Plus className="w-3 h-3 text-slate-300 group-hover:text-orange-500" />
-                    </button>
+                      product={product}
+                      showMealButtons={activeMealIndex !== null}
+                      onOpen={() => {
+                        openProductFromHistory(product, activeMealIndex ?? undefined);
+                        setIsScannerOpen(false);
+                      }}
+                    />
                   ))}
                 </div>
               </div>
             )}
-            
+
             {isLoading && (
               <div className="flex items-center justify-center gap-2 text-slate-500 py-4">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1390,34 +1444,51 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Product Details Modal */}
+      {/* ─── Product Details Modal ───────────────────────────────────────────── */}
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[90vh] overflow-y-auto p-6">
           <DialogHeader>
-            <DialogTitle>Détails du produit</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Détails du produit</span>
+              {scannedProduct && (
+                <button
+                  onClick={() => toggleFavorite(tempName || scannedProduct.name)}
+                  className="p-1.5 rounded-xl hover:bg-yellow-50 transition-colors"
+                >
+                  <Star
+                    className={cn(
+                      "w-5 h-5 transition-colors",
+                      favorites.includes(tempName || scannedProduct.name)
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
+                    )}
+                  />
+                </button>
+              )}
+            </DialogTitle>
           </DialogHeader>
           {scannedProduct && (
             <div className="space-y-5 py-2">
               <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                {scannedProduct.image_url && (
-                  <img 
-                    src={scannedProduct.image_url} 
-                    alt={scannedProduct.product_name} 
+                {scannedProduct.imageUrl && (
+                  <img
+                    src={scannedProduct.imageUrl}
+                    alt={scannedProduct.name}
                     className="w-16 h-16 object-contain rounded-xl bg-white p-1 shadow-sm"
                     referrerPolicy="no-referrer"
                   />
                 )}
                 <div className="min-w-0 flex-1">
-                  <Input 
-                    value={tempName} 
+                  <Input
+                    value={tempName}
                     onChange={(e) => setTempName(e.target.value)}
                     className="font-bold text-base text-slate-800 border-none p-0 h-auto focus-visible:ring-0 mb-1"
                     placeholder="Nom de l'aliment"
                   />
                   <div className="flex items-center gap-2">
-                    <Input 
-                      type="number" 
-                      value={tempKcal} 
+                    <Input
+                      type="number"
+                      value={tempKcal}
                       onChange={(e) => setTempKcal(Number(e.target.value))}
                       className="h-8 w-20 text-sm font-bold border-orange-200 focus:border-orange-500"
                     />
@@ -1430,37 +1501,16 @@ export default function App() {
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Valeurs pour 100g</h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1">
-                      <Dna className="w-3 h-3" /> Protéines
-                    </Label>
-                    <Input 
-                      type="number" 
-                      value={tempProtein} 
-                      onChange={(e) => setTempProtein(Number(e.target.value))}
-                      className="h-10 rounded-xl border-blue-100 focus:border-blue-500"
-                    />
+                    <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Dna className="w-3 h-3" /> Protéines</Label>
+                    <Input type="number" value={tempProtein} onChange={(e) => setTempProtein(Number(e.target.value))} className="h-10 rounded-xl border-blue-100 focus:border-blue-500" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1">
-                      <Wheat className="w-3 h-3" /> Glucides
-                    </Label>
-                    <Input 
-                      type="number" 
-                      value={tempCarbs} 
-                      onChange={(e) => setTempCarbs(Number(e.target.value))}
-                      className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500"
-                    />
+                    <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1"><Wheat className="w-3 h-3" /> Glucides</Label>
+                    <Input type="number" value={tempCarbs} onChange={(e) => setTempCarbs(Number(e.target.value))} className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1">
-                      <Droplets className="w-3 h-3" /> Lipides
-                    </Label>
-                    <Input 
-                      type="number" 
-                      value={tempFat} 
-                      onChange={(e) => setTempFat(Number(e.target.value))}
-                      className="h-10 rounded-xl border-red-100 focus:border-red-500"
-                    />
+                    <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Droplets className="w-3 h-3" /> Lipides</Label>
+                    <Input type="number" value={tempFat} onChange={(e) => setTempFat(Number(e.target.value))} className="h-10 rounded-xl border-red-100 focus:border-red-500" />
                   </div>
                 </div>
               </div>
@@ -1469,10 +1519,10 @@ export default function App() {
                 <Label htmlFor="quantity" className="text-sm font-bold text-slate-700">Quantité consommée (en grammes)</Label>
                 <div className="flex items-center gap-4">
                   <div className="relative flex-1">
-                    <Input 
-                      id="quantity" 
-                      type="number" 
-                      value={tempQuantity} 
+                    <Input
+                      id="quantity"
+                      type="number"
+                      value={tempQuantity}
                       onChange={(e) => setTempQuantity(Number(e.target.value))}
                       className="rounded-2xl h-12 text-lg font-bold pr-8 border-slate-200 focus:border-orange-500"
                     />
@@ -1487,11 +1537,53 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
-                <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-orange-100 transition-all active:scale-[0.98]" onClick={addProductToMeal}>
-                  Ajouter au repas
+              {/* Meal selector */}
+              <div className="space-y-2 pt-2">
+                <Label className="text-sm font-bold text-slate-700">Ajouter à un repas</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {meals.map((meal, idx) => {
+                    const MealIcon = ICON_MAP[meal.icon] || Apple;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setActiveMealIndex(idx)}
+                        className={cn(
+                          "flex flex-col items-center gap-1.5 p-2.5 rounded-2xl border-2 transition-all",
+                          activeMealIndex === idx
+                            ? "border-orange-400 bg-orange-50 shadow-sm"
+                            : "border-slate-100 bg-slate-50 hover:border-slate-200"
+                        )}
+                      >
+                        <MealIcon className={cn("w-5 h-5", meal.color)} />
+                        <span className="text-[9px] font-bold text-slate-600 text-center leading-tight">{meal.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-1">
+                <Button
+                  className={cn(
+                    "w-full text-white rounded-2xl h-14 font-bold text-lg shadow-lg transition-all active:scale-[0.98]",
+                    activeMealIndex !== null
+                      ? "bg-orange-500 hover:bg-orange-600 shadow-orange-100"
+                      : "bg-slate-300 cursor-not-allowed"
+                  )}
+                  onClick={addProductToMeal}
+                  disabled={activeMealIndex === null}
+                >
+                  {activeMealIndex !== null
+                    ? `Ajouter au ${meals[activeMealIndex]?.title}`
+                    : "Choisissez un repas ci-dessus"
+                  }
                 </Button>
-                <Button variant="outline" className="w-full border-slate-200 text-slate-600 rounded-2xl h-12 font-bold transition-all active:scale-[0.98]" onClick={addToHistoryOnly}>
+                <Button
+                  variant="outline"
+                  className="w-full border-slate-200 text-slate-600 rounded-2xl h-12 font-bold transition-all active:scale-[0.98]"
+                  onClick={addToHistoryOnly}
+                >
                   Ajouter à l'historique uniquement
                 </Button>
               </div>
@@ -1500,8 +1592,14 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Meal Details View */}
-      <Dialog open={selectedMealForView !== null} onOpenChange={(open) => !open && setSelectedMealForView(null)}>
+      {/* ─── Meal Details View ───────────────────────────────────────────────── */}
+      <Dialog open={selectedMealForView !== null} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedMealForView(null);
+          setMealHistorySearch("");
+          setMealHistoryTab("recent");
+        }
+      }}>
         <DialogContent className="sm:max-w-md rounded-3xl h-[80vh] flex flex-col p-0 overflow-hidden">
           {selectedMealForView !== null && (
             <>
@@ -1515,14 +1613,11 @@ export default function App() {
                       return <MealIcon className={cn("w-5 h-5", meals[selectedMealForView]?.color)} />;
                     })()}
                   </DialogTitle>
-                  <DialogDescription>
-                    Liste des aliments consommés
-                  </DialogDescription>
+                  <DialogDescription>Liste des aliments consommés</DialogDescription>
                 </DialogHeader>
               </div>
-              
+
               <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                {/* Current Meal Products */}
                 <div className="space-y-4">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aliments consommés</h4>
                   {meals[selectedMealForView].products.length === 0 ? (
@@ -1534,12 +1629,7 @@ export default function App() {
                       {meals[selectedMealForView].products.map((product) => (
                         <div key={product.id} className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border">
                           {product.imageUrl && (
-                            <img 
-                              src={product.imageUrl} 
-                              alt={product.name} 
-                              className="w-12 h-12 object-contain rounded-lg bg-slate-50"
-                              referrerPolicy="no-referrer"
-                            />
+                            <img src={product.imageUrl} alt={product.name} className="w-12 h-12 object-contain rounded-lg bg-slate-50" referrerPolicy="no-referrer" />
                           )}
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start">
@@ -1548,50 +1638,39 @@ export default function App() {
                                 {((product.kcalPer100g * product.quantityGrams) / 100).toFixed(0)} kcal
                               </span>
                             </div>
-                            
                             <div className="flex items-center gap-2 mt-1">
-                              <Input 
-                                type="number" 
-                                value={product.quantityGrams} 
+                              <Input
+                                type="number"
+                                value={product.quantityGrams}
                                 onChange={(e) => updateProductDetail(selectedMealForView, product.id, "quantityGrams", Number(e.target.value))}
                                 className="h-7 w-16 text-xs px-1 rounded-md"
                               />
                               <span className="text-[10px] text-slate-400 font-medium">g</span>
                             </div>
-
                             <div className="grid grid-cols-3 gap-1 mt-2">
                               <div className="space-y-1">
                                 <div className="text-[8px] text-blue-600 font-bold">Prot (100g)</div>
-                                <Input 
-                                  type="number" 
-                                  value={product.proteinPer100g} 
+                                <Input type="number" value={product.proteinPer100g}
                                   onChange={(e) => updateProductDetail(selectedMealForView, product.id, "proteinPer100g", Number(e.target.value))}
-                                  className="h-6 text-[10px] px-1 rounded-md"
-                                />
+                                  className="h-6 text-[10px] px-1 rounded-md" />
                               </div>
                               <div className="space-y-1">
                                 <div className="text-[8px] text-yellow-700 font-bold">Gluc (100g)</div>
-                                <Input 
-                                  type="number" 
-                                  value={product.carbsPer100g} 
+                                <Input type="number" value={product.carbsPer100g}
                                   onChange={(e) => updateProductDetail(selectedMealForView, product.id, "carbsPer100g", Number(e.target.value))}
-                                  className="h-6 text-[10px] px-1 rounded-md"
-                                />
+                                  className="h-6 text-[10px] px-1 rounded-md" />
                               </div>
                               <div className="space-y-1">
                                 <div className="text-[8px] text-red-600 font-bold">Lip (100g)</div>
-                                <Input 
-                                  type="number" 
-                                  value={product.fatPer100g} 
+                                <Input type="number" value={product.fatPer100g}
                                   onChange={(e) => updateProductDetail(selectedMealForView, product.id, "fatPer100g", Number(e.target.value))}
-                                  className="h-6 text-[10px] px-1 rounded-md"
-                                />
+                                  className="h-6 text-[10px] px-1 rounded-md" />
                               </div>
                             </div>
                           </div>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="text-slate-300 hover:text-red-500 h-8 w-8"
                             onClick={() => removeProduct(selectedMealForView, product.id)}
                           >
@@ -1603,87 +1682,96 @@ export default function App() {
                   )}
                 </div>
 
-                {/* History Section Integrated */}
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Historique / Favoris</h4>
-                    {productHistory.length > 0 && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-6 text-[10px] text-slate-400 hover:text-red-500"
-                        onClick={() => setProductHistory([])}
-                      >
-                        Vider
-                      </Button>
-                    )}
+                {/* History section avec recherche + onglets */}
+                <div className="space-y-3 pt-4 border-t">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      value={mealHistorySearch}
+                      onChange={(e) => setMealHistorySearch(e.target.value)}
+                      placeholder="Rechercher un aliment..."
+                      className="pl-9 rounded-xl h-10 bg-slate-50 border-slate-200"
+                    />
                   </div>
-                  
-                  {productHistory.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 text-center py-4">Votre historique est vide.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-2">
-                      {productHistory.map((product) => (
-                        <div
-                          key={product.id}
-                          className="flex items-center gap-3 p-2 rounded-xl bg-slate-50 border border-slate-100 group"
-                        >
-                          <div className="w-10 h-10 rounded-lg bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
-                            {product.imageUrl ? (
-                              <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                            ) : (
-                              <Apple className="w-5 h-5 text-slate-300" />
-                            )}
+
+                  {/* Tabs */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setMealHistoryTab("recent")}
+                      className={cn(
+                        "h-9 rounded-xl text-sm font-bold transition-all",
+                        mealHistoryTab === "recent"
+                          ? "bg-indigo-500 text-white shadow-sm"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      )}
+                    >
+                      Récents ({productHistory.length})
+                    </button>
+                    <button
+                      onClick={() => setMealHistoryTab("favorites")}
+                      className={cn(
+                        "h-9 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5",
+                        mealHistoryTab === "favorites"
+                          ? "bg-yellow-400 text-white shadow-sm"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      )}
+                    >
+                      <Star className={cn("w-3.5 h-3.5", mealHistoryTab === "favorites" ? "fill-white" : "")} />
+                      Favoris ({productHistory.filter(p => favorites.includes(p.name)).length})
+                    </button>
+                  </div>
+
+                  {/* Liste filtrée */}
+                  {(() => {
+                    let items = mealHistoryTab === "favorites"
+                      ? productHistory.filter(p => favorites.includes(p.name))
+                      : productHistory;
+                    if (mealHistorySearch.trim()) {
+                      const q = mealHistorySearch.toLowerCase();
+                      items = items.filter(p => p.name.toLowerCase().includes(q));
+                    }
+                    if (items.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
+                          <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
+                            {mealHistoryTab === "favorites"
+                              ? <Star className="w-6 h-6 text-slate-200" />
+                              : <History className="w-6 h-6 text-slate-200" />
+                            }
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-slate-700 truncate">{product.name}</p>
-                            <p className="text-[9px] text-slate-400">
-                              {product.kcalPer100g} kcal/100g
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="h-7 px-2 rounded-lg bg-white hover:bg-orange-500 hover:text-white text-[10px] font-bold transition-colors"
-                              onClick={() => {
-                                setScannedProduct({
-                                  id: product.id,
-                                  name: product.name,
-                                  kcalPer100g: product.kcalPer100g,
-                                  proteinsPer100g: product.proteinPer100g,
-                                  carbsPer100g: product.carbsPer100g,
-                                  fatPer100g: product.fatPer100g,
-                                  imageUrl: product.imageUrl,
-                                  source: 'OFF',
-                                  servingQuantity: 100
-                                });
-                                setTempQuantity(product.quantityGrams || 100);
-                                setActiveMealIndex(selectedMealForView);
-                                setIsProductModalOpen(true);
-                              }}
-                            >
-                              <Plus className="w-3 h-3 mr-1" />
-                              Ajouter
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="w-7 h-7 rounded-full text-slate-300 hover:text-red-500"
-                              onClick={() => removeFromHistory(product.id)}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
+                          <p className="text-sm font-bold text-slate-400">
+                            {mealHistoryTab === "favorites" ? "Aucun favori" : mealHistorySearch ? "Aucun résultat" : "Historique vide"}
+                          </p>
+                          <p className="text-xs text-slate-300">
+                            {mealHistoryTab === "favorites"
+                              ? "Appuyez sur ⭐ pour mettre un produit en favori."
+                              : mealHistorySearch ? "Essayez un autre mot-clé." : "Scannez des produits pour les retrouver ici."
+                            }
+                          </p>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      );
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {items.map((product) => (
+                          <HistoryItem
+                            key={product.id}
+                            product={product}
+                            onOpen={() => {
+                              openProductFromHistory(product, selectedMealForView!);
+                              setSelectedMealForView(null);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
               <div className="p-6 border-t bg-slate-50">
-                <Button 
+                <Button
                   className="w-full bg-orange-500 hover:bg-orange-600 rounded-xl h-12 font-bold"
                   onClick={() => {
                     setActiveMealIndex(selectedMealForView);
@@ -1700,7 +1788,7 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Activity Modal */}
+      {/* ─── Activity Modal ──────────────────────────────────────────────────── */}
       <Dialog open={isActivityModalOpen} onOpenChange={setIsActivityModalOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-6">
           <DialogHeader>
@@ -1709,11 +1797,10 @@ export default function App() {
               Ajouter un exercice
             </DialogTitle>
           </DialogHeader>
-          
           <div className="space-y-6 py-4">
             <div className="space-y-2">
               <Label className="text-sm font-bold text-slate-500">Calories brûlées (kcal)</Label>
-              <Input 
+              <Input
                 type="number"
                 placeholder="0"
                 value={tempActivityKcal || ""}
@@ -1725,8 +1812,7 @@ export default function App() {
                 autoFocus
               />
             </div>
-
-            <Button 
+            <Button
               className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-blue-200"
               onClick={addActivity}
               disabled={tempActivityKcal <= 0}
