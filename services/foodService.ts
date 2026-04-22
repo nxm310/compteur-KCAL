@@ -4,7 +4,6 @@ const OFF_USER_AGENT = "CaloTrack - WebApp - Version 1.0";
 const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
 const USDA_API_KEY = "SBFfcU1dYSIQkGUKBUstxhJUkJVim2DqaWbnBd0J";
 
-// Proxy CORS de secours — utilisé uniquement si la requête directe échoue (iOS Safari)
 const CORS_PROXY = "https://corsproxy.io/?url=";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -37,7 +36,6 @@ const fetchWithTimeout = async (
   }
 };
 
-// Fetch avec fallback proxy CORS automatique si la requête directe est bloquée (CORS/503)
 const fetchWithCORSFallback = async (
   url: string,
   options: RequestInit = {},
@@ -45,11 +43,9 @@ const fetchWithCORSFallback = async (
 ): Promise<Response> => {
   try {
     const res = await fetchWithTimeout(url, options, timeoutMs);
-    // 503 = souvent le signe d'un blocage CORS côté serveur sur iOS
     if (res.status === 503) throw new Error(`HTTP 503`);
     return res;
   } catch (e) {
-    // Retry via proxy CORS (sans User-Agent — le proxy ne le transmet pas toujours)
     console.warn("Requête directe échouée, retry via proxy CORS:", url);
     const proxied = `${CORS_PROXY}${encodeURIComponent(url)}`;
     return fetchWithTimeout(proxied, {}, timeoutMs);
@@ -87,15 +83,12 @@ export interface UnifiedProduct {
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
 
-// Retourne la plus petite image disponible pour réduire la latence sur mobile
 const getOFFImageUrl = (p: any): string | undefined => {
-  // Priorité : small (200px) → thumb (100px) → front générique → image_url (400px en dernier recours)
   return (
     p.image_front_small_url ||
     p.image_small_url ||
     p.image_thumb_url ||
     p.image_front_thumb_url ||
-    // Fallback : transformer l'URL 400px en 200px si possible
     (p.image_url ? p.image_url.replace(/\.400\.jpg$/, ".200.jpg") : undefined) ||
     p.image_url
   );
@@ -129,25 +122,41 @@ const mapUSDAProduct = (p: any): UnifiedProduct => {
   };
 };
 
-// ─── OFF : barcode ────────────────────────────────────────────────────────────
+// ─── OFF : barcode (FR + World en parallèle) ──────────────────────────────────
 
-const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
+const fetchOFFByBarcodeFromBase = async (base: string, barcode: string): Promise<UnifiedProduct | null> => {
   try {
     const res = await fetchWithCORSFallback(
-      `${OFF_BASE}/api/v2/product/${barcode}.json`,
-      { headers: { "User-Agent": OFF_USER_AGENT } }
+      `${base}/api/v2/product/${barcode}.json`,
+      { headers: { "User-Agent": OFF_USER_AGENT } },
+      5000  // timeout court pour réagir vite
     );
     if (!res.ok) return null;
     const data = await safeJson(res);
-    if (!data?.product) return null;
+    // Vérifie que le produit a au moins un nom
+    if (!data?.product?.product_name) return null;
     return mapOFFProduct(data.product);
   } catch (e) {
-    console.warn("OFF barcode error:", e);
     return null;
   }
 };
 
-// ─── OFF : search FR (fr.openfoodfacts.org — priorité EU/FR) ─────────────────
+const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
+  try {
+    // Lance FR et World simultanément — le premier qui répond avec un produit valide gagne
+    const result = await Promise.any(
+      [
+        fetchOFFByBarcodeFromBase(OFF_FR_BASE, barcode),
+        fetchOFFByBarcodeFromBase(OFF_BASE, barcode),
+      ].map((p) => p.then((r) => r ?? Promise.reject("no result")))
+    );
+    return result;
+  } catch {
+    return null;
+  }
+};
+
+// ─── OFF : search FR ──────────────────────────────────────────────────────────
 
 const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
@@ -166,14 +175,11 @@ const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduc
   }
 };
 
-// ─── OFF : search world (world.openfoodfacts.org — fallback mondial) ──────────
-// Note : world bloque corsproxy.io avec 503 — on tente quand même en direct
-// (fonctionne sur desktop/Android), mais on ne le met plus en parallèle bloquant
+// ─── OFF : search world ───────────────────────────────────────────────────────
 
 const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
     const url = `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`;
-    // Pas de fallback proxy pour world (il bloque corsproxy.io) — tentative directe uniquement
     const res = await fetchWithTimeout(url, { headers: { "User-Agent": OFF_USER_AGENT } }, 6000);
     if (!res.ok) return [];
     const data = await safeJson(res);
@@ -183,7 +189,6 @@ const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]
       .slice(0, pageSize)
       .map(mapOFFProduct);
   } catch (e) {
-    // Silencieux — world peut échouer sur iOS, FR suffit
     return [];
   }
 };
@@ -270,19 +275,14 @@ export const fetchNutritionData = async (
     return { source: "OFF", products: [] };
 
   } else {
-    // Stratégie : FR en priorité (fonctionne sur iOS via proxy CORS)
-    // World lancé en parallèle mais non-bloquant (peut échouer sur iOS, c'est OK)
-    const worldPromise = searchOFF(input, 20); // lancé mais pas encore attendu
-
+    const worldPromise = searchOFF(input, 20);
     const frResults = await searchOFF_FR(input, 20);
     console.log("🇫🇷 OFF-FR:", frResults.length);
 
-    // Si FR a assez de résultats, on n'attend même pas world
     if (frResults.length >= 5) {
       return { source: "OFF-FR", products: frResults };
     }
 
-    // FR insuffisant → on attend world (il a eu le même temps que FR pour répondre)
     const worldResults = await worldPromise;
     console.log("🌍 OFF-world:", worldResults.length);
 
@@ -292,7 +292,6 @@ export const fetchNutritionData = async (
       return { source: "OFF", products: offResults };
     }
 
-    // USDA uniquement si OFF (FR + world) insuffisant
     const usdaResults = await searchUSDA(input, 10);
     return {
       source: "OFF+USDA",
