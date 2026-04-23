@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -1206,7 +1207,7 @@ export default function App() {
 
       {/* ─── History Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={isHistoryOpen} onOpenChange={(open) => { setIsHistoryOpen(open); if (!open) { setHistorySearch(""); } }}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
           <div className="p-5 pb-0 border-b bg-white">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 mb-4">
@@ -1253,7 +1254,7 @@ export default function App() {
           </div>
 
           <div
-            className="overflow-y-scroll p-5 flex-1"
+            className="overflow-y-scroll p-5 flex-1 min-h-0"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {filteredHistory.length > 0 ? (
@@ -1344,7 +1345,7 @@ export default function App() {
 
       {/* ─── Search Results Dialog ──────────────────────────────────────────── */}
       <Dialog open={isSearchModalOpen} onOpenChange={setIsSearchModalOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
           <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -1354,7 +1355,7 @@ export default function App() {
             </DialogHeader>
           </div>
           <div
-            className="overflow-y-scroll p-6 pt-4 flex-1"
+            className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             <div className="grid grid-cols-1 gap-3">
@@ -1420,7 +1421,7 @@ export default function App() {
 
       {/* ─── Scanner Dialog ──────────────────────────────────────────────────── */}
       <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); }}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
           <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
               <DialogTitle>
@@ -1432,7 +1433,7 @@ export default function App() {
             </DialogHeader>
           </div>
           <div
-            className="overflow-y-scroll p-6 pt-4 flex-1 space-y-6"
+            className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0 space-y-6"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             <div className="space-y-2">
@@ -1647,7 +1648,7 @@ export default function App() {
               </div>
 
               <div
-                className="flex-1 overflow-y-scroll p-6 space-y-8"
+                className="flex-1 overflow-y-scroll min-h-0 p-6 space-y-8"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
                 <div className="space-y-4">
