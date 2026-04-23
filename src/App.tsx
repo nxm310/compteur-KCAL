@@ -1252,7 +1252,10 @@ export default function App() {
             </div>
           </div>
 
-          <div className="overflow-y-auto p-5 flex-1">
+          <div
+            className="overflow-y-scroll p-5 flex-1"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             {filteredHistory.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between mb-1">
@@ -1350,7 +1353,10 @@ export default function App() {
               </DialogTitle>
             </DialogHeader>
           </div>
-          <div className="overflow-y-auto p-6 pt-4 flex-1">
+          <div
+            className="overflow-y-scroll p-6 pt-4 flex-1"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             <div className="grid grid-cols-1 gap-3">
               {searchResults.map((product) => (
                 <button
@@ -1425,7 +1431,10 @@ export default function App() {
               </DialogTitle>
             </DialogHeader>
           </div>
-          <div className="overflow-y-auto p-6 pt-4 flex-1 space-y-6">
+          <div
+            className="overflow-y-scroll p-6 pt-4 flex-1 space-y-6"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             <div className="space-y-2">
               <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scanner ou Saisir</h4>
               <Scanner
@@ -1637,7 +1646,10 @@ export default function App() {
                 </DialogHeader>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div
+                className="flex-1 overflow-y-scroll p-6 space-y-8"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
                 <div className="space-y-4">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aliments consommés</h4>
                   {meals[selectedMealForView].products.length === 0 ? (
