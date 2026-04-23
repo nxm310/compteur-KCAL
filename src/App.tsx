@@ -185,10 +185,10 @@ const ICON_MAP: Record<string, any> = {
 };
 
 const INITIAL_MEALS = [
-  { title: "Petit-déj", icon: "Croissant", color: "text-orange-500", products: [] },
-  { title: "Déjeuner", icon: "Sun", color: "text-yellow-500", products: [] },
-  { title: "Dîner", icon: "Moon", color: "text-indigo-500", products: [] },
-  { title: "En-cas", icon: "Apple", color: "text-red-500", products: [] },
+  { title: "Petit-déj", icon: "Croissant", color: "text-orange-500", bg: "bg-orange-50", products: [] },
+  { title: "Déjeuner", icon: "Sun", color: "text-yellow-500", bg: "bg-yellow-50", products: [] },
+  { title: "Dîner", icon: "Moon", color: "text-indigo-500", bg: "bg-indigo-50", products: [] },
+  { title: "En-cas", icon: "Apple", color: "text-red-500", bg: "bg-red-50", products: [] },
 ];
 
 export default function App() {
@@ -209,10 +209,19 @@ export default function App() {
       const saved = localStorage.getItem("calo_meals_v2");
       if (!saved) return {};
       const parsed = JSON.parse(saved);
+      const BG_MAP: Record<string, string> = {
+        "Petit-déj": "bg-orange-50",
+        "Déjeuner": "bg-yellow-50",
+        "Dîner": "bg-indigo-50",
+        "En-cas": "bg-red-50",
+      };
       Object.keys(parsed).forEach(date => {
         parsed[date] = parsed[date].map((meal: any) => {
           if (meal.title === "Petit-déj" && meal.icon === "Sun") {
-            return { ...meal, icon: "Croissant", color: "text-orange-500" };
+            return { ...meal, icon: "Croissant", color: "text-orange-500", bg: "bg-orange-50" };
+          }
+          if (!meal.bg) {
+            return { ...meal, bg: BG_MAP[meal.title] || "bg-slate-50" };
           }
           return meal;
         });
@@ -891,7 +900,7 @@ export default function App() {
                     transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
                   >
                     <Card
-                      className="border-none shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-[2rem] cursor-pointer overflow-hidden"
+                      className={cn("border-none shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-[2rem] cursor-pointer overflow-hidden", meal.bg || "bg-white")}
                       onClick={() => setSelectedMealForView(index)}
                     >
                       <CardContent className="p-5 relative">
