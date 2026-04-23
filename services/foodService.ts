@@ -1,8 +1,5 @@
 const OFF_FR_BASE = "https://fr.openfoodfacts.org";
 const OFF_USER_AGENT = "CaloTrack - WebApp - Version 1.0";
-const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
-const USDA_API_KEY = "SBFfcU1dYSIQkGUKBUstxhJUkJVim2DqaWbnBd0J";
-
 const CORS_PROXY = "https://corsproxy.io/?url=";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -10,7 +7,7 @@ const CORS_PROXY = "https://corsproxy.io/?url=";
 const safeJson = async (response: Response): Promise<any | null> => {
   try {
     const text = await response.text();
-    if (!text || text.trim().startsWith("<")) return null; // HTML → pas JSON
+    if (!text || text.trim().startsWith("<")) return null;
     return JSON.parse(text);
   } catch (e) {
     console.warn("API: échec du parsing JSON", e);
@@ -73,11 +70,11 @@ export interface UnifiedProduct {
   carbsPer100g: number;
   fatPer100g: number;
   imageUrl?: string;
-  source: "OFF" | "USDA";
+  source: "OFF";
   servingQuantity?: number;
 }
 
-// ─── Mappers ─────────────────────────────────────────────────────────────────
+// ─── Mapper ──────────────────────────────────────────────────────────────────
 
 const getOFFImageUrl = (p: any): string | undefined => {
   return (
@@ -102,23 +99,7 @@ const mapOFFProduct = (p: any): UnifiedProduct => ({
   servingQuantity: p.serving_quantity || 100,
 });
 
-const mapUSDAProduct = (p: any): UnifiedProduct => {
-  const nutrients = p.foodNutrients || [];
-  const get = (id: number) => nutrients.find((n: any) => n.nutrientId === id)?.value || 0;
-  return {
-    id: String(p.fdcId || Math.random()),
-    name: p.description || "Inconnu",
-    kcalPer100g: get(1008),
-    proteinsPer100g: get(1003),
-    carbsPer100g: get(1005),
-    fatPer100g: get(1004),
-    imageUrl: undefined,
-    source: "USDA" as const,
-    servingQuantity: 100,
-  };
-};
-
-// ─── OFF : barcode (FR + World en parallèle) ──────────────────────────────────
+// ─── OFF : barcode ────────────────────────────────────────────────────────────
 
 const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
   try {
@@ -136,7 +117,7 @@ const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null
   }
 };
 
-// ─── OFF : search FR ──────────────────────────────────────────────────────────
+// ─── OFF : search ─────────────────────────────────────────────────────────────
 
 const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
   try {
@@ -153,33 +134,6 @@ const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduc
     console.warn("OFF FR search error:", e);
     return [];
   }
-};
-
-// ─── USDA : search ────────────────────────────────────────────────────────────
-
-const searchUSDA = async (query: string, limit = 10): Promise<UnifiedProduct[]> => {
-  try {
-    const url = `${USDA_BASE}/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(query)}&pageSize=${limit}&dataType=Foundation,SR%20Legacy,Branded`;
-    const res = await fetchWithCORSFallback(url);
-    if (!res.ok) return [];
-    const data = await safeJson(res);
-    if (!data?.foods) return [];
-    return data.foods.slice(0, limit).map(mapUSDAProduct);
-  } catch (e) {
-    console.warn("USDA search error:", e);
-    return [];
-  }
-};
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const deduplicateById = (products: UnifiedProduct[]): UnifiedProduct[] => {
-  const seen = new Set<string>();
-  return products.filter((p) => {
-    if (seen.has(p.id)) return false;
-    seen.add(p.id);
-    return true;
-  });
 };
 
 // ─── API publique ─────────────────────────────────────────────────────────────
@@ -203,15 +157,8 @@ export const fetchProductByBarcode = async (barcode: string): Promise<OFFProduct
 
 export const searchProductsByName = async (query: string): Promise<OFFProduct[]> => {
   if (!query || query.trim().length < 2) return [];
-
-  const [frResults, worldResults] = await Promise.all([
-    searchOFF_FR(query, 20),
-    searchOFF(query, 20),
-  ]);
-
-  const allResults = deduplicateById([...frResults, ...worldResults]);
-
-  return allResults.map((r) => ({
+  const results = await searchOFF_FR(query, 20);
+  return results.map((r) => ({
     code: r.id,
     product_name: r.name,
     image_url: r.imageUrl,
@@ -231,25 +178,13 @@ export const fetchNutritionData = async (
   const isBarcode = /^\d+$/.test(input);
 
   if (isBarcode) {
-    const offResult = await fetchOFFByBarcode(input);
-    if (offResult) return { source: "OFF", products: [offResult] };
+    const result = await fetchOFFByBarcode(input);
+    if (result) return { source: "OFF", products: [result] };
     console.warn("Barcode non trouvé dans OFF:", input);
     return { source: "OFF", products: [] };
-
   } else {
-    const frResults = await searchOFF_FR(input, 20);
-    console.log("🇫🇷 OFF-FR:", frResults.length);
-
-    if (frResults.length >= 1) {
-      return { source: "OFF-FR", products: frResults };
-    }
-
-    // USDA uniquement si OFF-FR ne trouve vraiment rien
-    console.warn("OFF-FR vide, fallback USDA pour:", input);
-    const usdaResults = await searchUSDA(input, 10);
-    return {
-      source: "USDA",
-      products: usdaResults,
-    };
+    const results = await searchOFF_FR(input, 20);
+    console.log("🇫🇷 OFF-FR:", results.length);
+    return { source: "OFF-FR", products: results };
   }
 };
