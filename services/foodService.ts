@@ -1,4 +1,3 @@
-const OFF_BASE = "https://world.openfoodfacts.org";
 const OFF_FR_BASE = "https://fr.openfoodfacts.org";
 const OFF_USER_AGENT = "CaloTrack - WebApp - Version 1.0";
 const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
@@ -121,34 +120,18 @@ const mapUSDAProduct = (p: any): UnifiedProduct => {
 
 // ─── OFF : barcode (FR + World en parallèle) ──────────────────────────────────
 
-const fetchOFFByBarcodeFromBase = async (base: string, barcode: string): Promise<UnifiedProduct | null> => {
+const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
   try {
     const res = await fetchWithCORSFallback(
-      `${base}/api/v2/product/${barcode}.json`,
+      `${OFF_FR_BASE}/api/v2/product/${barcode}.json`,
       { headers: { "User-Agent": OFF_USER_AGENT } },
-      5000  // timeout court pour réagir vite
+      8000
     );
     if (!res.ok) return null;
     const data = await safeJson(res);
-    // Vérifie que le produit a au moins un nom
     if (!data?.product?.product_name) return null;
     return mapOFFProduct(data.product);
   } catch (e) {
-    return null;
-  }
-};
-
-const fetchOFFByBarcode = async (barcode: string): Promise<UnifiedProduct | null> => {
-  try {
-    // Lance FR et World simultanément — le premier qui répond avec un produit valide gagne
-    const result = await Promise.any(
-      [
-        fetchOFFByBarcodeFromBase(OFF_FR_BASE, barcode),
-        fetchOFFByBarcodeFromBase(OFF_BASE, barcode),
-      ].map((p) => p.then((r) => r ?? Promise.reject("no result")))
-    );
-    return result;
-  } catch {
     return null;
   }
 };
@@ -168,24 +151,6 @@ const searchOFF_FR = async (query: string, pageSize = 20): Promise<UnifiedProduc
       .map(mapOFFProduct);
   } catch (e) {
     console.warn("OFF FR search error:", e);
-    return [];
-  }
-};
-
-// ─── OFF : search world ───────────────────────────────────────────────────────
-
-const searchOFF = async (query: string, pageSize = 20): Promise<UnifiedProduct[]> => {
-  try {
-    const url = `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=${pageSize}&sort_by=unique_scans_n`;
-    const res = await fetchWithTimeout(url, { headers: { "User-Agent": OFF_USER_AGENT } }, 6000);
-    if (!res.ok) return [];
-    const data = await safeJson(res);
-    if (!data) return [];
-    return (data.products || [])
-      .filter((p: any) => p.product_name && (p.nutriments?.["energy-kcal_100g"] || 0) > 0)
-      .slice(0, pageSize)
-      .map(mapOFFProduct);
-  } catch (e) {
     return [];
   }
 };
@@ -272,22 +237,15 @@ export const fetchNutritionData = async (
     return { source: "OFF", products: [] };
 
   } else {
-    // FR et World lancés en parallèle — le premier à répondre n'attend pas l'autre
-    const [frResults, worldResults] = await Promise.all([
-      searchOFF_FR(input, 20),
-      searchOFF(input, 20),
-    ]);
+    const frResults = await searchOFF_FR(input, 20);
+    console.log("🇫🇷 OFF-FR:", frResults.length);
 
-    console.log("🇫🇷 OFF-FR:", frResults.length, "🌍 OFF-world:", worldResults.length);
-
-    const offResults = deduplicateById([...frResults, ...worldResults]);
-
-    if (offResults.length >= 1) {
-      return { source: "OFF", products: offResults };
+    if (frResults.length >= 1) {
+      return { source: "OFF-FR", products: frResults };
     }
 
-    // USDA uniquement si OFF (FR + world) ne trouve vraiment rien
-    console.warn("OFF vide, fallback USDA pour:", input);
+    // USDA uniquement si OFF-FR ne trouve vraiment rien
+    console.warn("OFF-FR vide, fallback USDA pour:", input);
     const usdaResults = await searchUSDA(input, 10);
     return {
       source: "USDA",
