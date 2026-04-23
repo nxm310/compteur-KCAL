@@ -807,99 +807,94 @@ export default function App() {
               <Card className="bg-gradient-to-br from-white via-white to-indigo-50/50 border-none shadow-xl rounded-[2.5rem] overflow-hidden relative">
                 <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-100/50 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-orange-100/30 rounded-full blur-3xl pointer-events-none" />
-                <CardContent className="p-7 space-y-8 relative z-10">
-                  <div className="flex items-center gap-8">
-                    <div className="relative w-32 h-32 flex-shrink-0">
-                      <svg viewBox="0 0 100 100" className="w-full h-full">
-                        <circle cx="50" cy="50" r="45" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
-                        <circle cx="50" cy="50" r="37" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
-                        <circle cx="50" cy="50" r="29" stroke="#E2E8F0" strokeWidth="6" fill="transparent" strokeOpacity="0.5" />
-                        <circle cx="50" cy="50" r="18" stroke="#E2E8F0" strokeWidth="10" fill="transparent" strokeOpacity="0.5" />
-                        <motion.circle cx="50" cy="50" r="45" stroke="#C084FC" strokeWidth="6" fill="transparent"
-                          strokeDasharray={2 * Math.PI * 45}
-                          initial={{ strokeDashoffset: 2 * Math.PI * 45 }}
-                          animate={{ strokeDashoffset: (2 * Math.PI * 45) * (1 - Math.min(totals.protein / profile.proteinGoal, 1)) }}
-                          strokeLinecap="round" transform="rotate(-90 50 50)"
-                          transition={{ duration: 1, ease: "easeOut" }}
-                        />
-                        <motion.circle cx="50" cy="50" r="37" stroke="#FDBA74" strokeWidth="6" fill="transparent"
-                          strokeDasharray={2 * Math.PI * 37}
-                          initial={{ strokeDashoffset: 2 * Math.PI * 37 }}
-                          animate={{ strokeDashoffset: (2 * Math.PI * 37) * (1 - Math.min(totals.fat / profile.fatGoal, 1)) }}
-                          strokeLinecap="round" transform="rotate(-90 50 50)"
-                          transition={{ duration: 1, ease: "easeOut", delay: 0.1 }}
-                        />
-                        <motion.circle cx="50" cy="50" r="29" stroke="#38BDF8" strokeWidth="6" fill="transparent"
-                          strokeDasharray={2 * Math.PI * 29}
-                          initial={{ strokeDashoffset: 2 * Math.PI * 29 }}
-                          animate={{ strokeDashoffset: (2 * Math.PI * 29) * (1 - Math.min(totals.carbs / profile.carbsGoal, 1)) }}
-                          strokeLinecap="round" transform="rotate(-90 50 50)"
-                          transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
-                        />
-                        <motion.circle cx="50" cy="50" r="18" stroke="#4ADE80" strokeWidth="10" fill="transparent"
-                          strokeDasharray={2 * Math.PI * 18}
-                          initial={{ strokeDashoffset: 2 * Math.PI * 18 }}
-                          animate={{ strokeDashoffset: (2 * Math.PI * 18) * (1 - Math.min(totals.kcal / profile.calorieGoal, 1)) }}
-                          strokeLinecap="round" transform="rotate(-90 50 50)"
-                          transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[#4ADE80] font-bold text-lg">Calories</span>
-                      <span className="text-3xl font-black text-slate-900">{totals.kcal.toFixed(0)} kcal</span>
-                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.calorieGoal} kcal</span>
-                      {remaining < 0
-                        ? <span className="text-red-400 text-[10px] font-bold">+{Math.abs(remaining).toFixed(0)} kcal dépassé</span>
-                        : <span className="text-slate-400 text-sm font-medium">{remaining.toFixed(0)} kcal restantes</span>
-                      }
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 pt-2">
-                    <div className="flex flex-col">
-                      <span className="text-[#C084FC] font-bold text-sm">Protéine</span>
-                      <span className="text-xl font-black text-slate-800">{totals.protein.toFixed(0)} g</span>
-                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.proteinGoal} g</span>
-                      {totals.protein > profile.proteinGoal
-                        ? <span className="text-red-400 text-[10px] font-bold">+{(totals.protein - profile.proteinGoal).toFixed(0)} g dépassé</span>
-                        : <span className="text-slate-300 text-[10px] font-medium">{(profile.proteinGoal - totals.protein).toFixed(0)} g restants</span>
-                      }
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[#FDBA74] font-bold text-sm">Graisses</span>
-                      <span className="text-xl font-black text-slate-800">{totals.fat.toFixed(0)} g</span>
-                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.fatGoal} g</span>
-                      {totals.fat > profile.fatGoal
-                        ? <span className="text-red-400 text-[10px] font-bold">+{(totals.fat - profile.fatGoal).toFixed(0)} g dépassé</span>
-                        : <span className="text-slate-300 text-[10px] font-medium">{(profile.fatGoal - totals.fat).toFixed(0)} g restants</span>
-                      }
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[#38BDF8] font-bold text-sm">Glucides</span>
-                      <span className="text-xl font-black text-slate-800">{totals.carbs.toFixed(0)} g</span>
-                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.carbsGoal} g</span>
-                      {totals.carbs > profile.carbsGoal
-                        ? <span className="text-red-400 text-[10px] font-bold">+{(totals.carbs - profile.carbsGoal).toFixed(0)} g dépassé</span>
-                        : <span className="text-slate-300 text-[10px] font-medium">{(profile.carbsGoal - totals.carbs).toFixed(0)} g restants</span>
-                      }
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between bg-indigo-50/50 p-4 rounded-3xl border border-indigo-100/50">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-indigo-500 p-2 rounded-xl shadow-lg shadow-indigo-200">
-                        <Flame className="w-5 h-5 text-white" />
+                <CardContent className="p-7 space-y-6 relative z-10">
+
+                  {/* ── Calories row ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Calories consommées</p>
+                        <p className="text-4xl font-black text-slate-900 leading-tight">
+                          {totals.kcal.toFixed(0)}
+                          <span className="text-base font-bold text-slate-400 ml-1">kcal</span>
+                        </p>
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Calories Brûlées</span>
-                        <span className="text-xl font-black text-indigo-600">+{totalBurned.toFixed(0)}</span>
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-slate-400">Objectif</p>
+                        <p className="text-sm font-black text-slate-600">{profile.calorieGoal} kcal</p>
+                        {remaining < 0
+                          ? <p className="text-xs font-bold text-red-400">+{Math.abs(remaining).toFixed(0)} dépassé</p>
+                          : <p className="text-xs font-bold text-emerald-500">{remaining.toFixed(0)} restantes</p>
+                        }
                       </div>
                     </div>
-                    <div className="h-10 w-[1px] bg-indigo-100" />
-                    <div className="flex flex-col items-end">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Net</span>
-                      <span className="text-xl font-black text-slate-900">{(totals.kcal - totalBurned).toFixed(0)}</span>
+
+                    {/* Barre de progression calories */}
+                    <div className="relative h-3 bg-slate-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className={cn(
+                          "h-full rounded-full",
+                          totals.kcal > profile.calorieGoal ? "bg-red-400" : "bg-emerald-400"
+                        )}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min((totals.kcal / profile.calorieGoal) * 100, 100)}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
+                      <Flame className="w-3 h-3 text-indigo-400" />
+                      <span>Activités : +{totalBurned.toFixed(0)} kcal</span>
+                      <span className="ml-auto font-bold text-slate-500">Net : {(totals.kcal - totalBurned).toFixed(0)} kcal</span>
                     </div>
                   </div>
+
+                  {/* ── Macro circles ── */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: "Glucides", value: totals.carbs, goal: profile.carbsGoal, color: "#EC4899", track: "#FCE7F3" },
+                      { label: "Protéines", value: totals.protein, goal: profile.proteinGoal, color: "#3B82F6", track: "#DBEAFE" },
+                      { label: "Lipides", value: totals.fat, goal: profile.fatGoal, color: "#F97316", track: "#FFEDD5" },
+                    ].map(({ label, value, goal, color, track }) => {
+                      const pct = Math.min((value / goal) * 100, 100);
+                      const over = value > goal;
+                      const r = 28;
+                      const circ = 2 * Math.PI * r;
+                      return (
+                        <div key={label} className="flex flex-col items-center gap-2">
+                          <div className="relative w-20 h-20">
+                            <svg viewBox="0 0 68 68" className="w-full h-full -rotate-90">
+                              <circle cx="34" cy="34" r={r} fill="none" stroke={track} strokeWidth="7" />
+                              <motion.circle
+                                cx="34" cy="34" r={r}
+                                fill="none"
+                                stroke={over ? "#F87171" : color}
+                                strokeWidth="7"
+                                strokeLinecap="round"
+                                strokeDasharray={circ}
+                                initial={{ strokeDashoffset: circ }}
+                                animate={{ strokeDashoffset: circ * (1 - pct / 100) }}
+                                transition={{ duration: 1, ease: "easeOut" }}
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-base font-black leading-none" style={{ color: over ? "#F87171" : color }}>
+                                {Math.round(pct)}%
+                              </span>
+                              <span className="text-[8px] font-bold text-slate-400 leading-none mt-0.5">{label}</span>
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-black text-slate-800">{value.toFixed(0)}g</p>
+                            {over
+                              ? <p className="text-[10px] font-bold text-red-400">+{(value - goal).toFixed(0)}g dépassé</p>
+                              : <p className="text-[10px] font-bold text-slate-400">{(goal - value).toFixed(0)}g restants</p>
+                            }
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                 </CardContent>
               </Card>
             </motion.div>
