@@ -848,24 +848,40 @@ export default function App() {
                     <div className="flex flex-col">
                       <span className="text-[#4ADE80] font-bold text-lg">Calories</span>
                       <span className="text-3xl font-black text-slate-900">{totals.kcal.toFixed(0)} kcal</span>
-                      <span className="text-slate-400 text-sm font-medium">{remaining > 0 ? `${remaining.toFixed(0)} kcal restantes` : "Objectif atteint !"}</span>
+                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.calorieGoal} kcal</span>
+                      {remaining < 0
+                        ? <span className="text-red-400 text-[10px] font-bold">+{Math.abs(remaining).toFixed(0)} kcal dépassé</span>
+                        : <span className="text-slate-400 text-sm font-medium">{remaining.toFixed(0)} kcal restantes</span>
+                      }
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4 pt-2">
                     <div className="flex flex-col">
                       <span className="text-[#C084FC] font-bold text-sm">Protéine</span>
                       <span className="text-xl font-black text-slate-800">{totals.protein.toFixed(0)} g</span>
-                      <span className="text-slate-300 text-xs font-medium">{Math.max(0, profile.proteinGoal - totals.protein).toFixed(0)} g restantes</span>
+                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.proteinGoal} g</span>
+                      {totals.protein > profile.proteinGoal
+                        ? <span className="text-red-400 text-[10px] font-bold">+{(totals.protein - profile.proteinGoal).toFixed(0)} g dépassé</span>
+                        : <span className="text-slate-300 text-[10px] font-medium">{(profile.proteinGoal - totals.protein).toFixed(0)} g restants</span>
+                      }
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[#FDBA74] font-bold text-sm">Graisses</span>
                       <span className="text-xl font-black text-slate-800">{totals.fat.toFixed(0)} g</span>
-                      <span className="text-slate-300 text-xs font-medium">{Math.max(0, profile.fatGoal - totals.fat).toFixed(0)} g restantes</span>
+                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.fatGoal} g</span>
+                      {totals.fat > profile.fatGoal
+                        ? <span className="text-red-400 text-[10px] font-bold">+{(totals.fat - profile.fatGoal).toFixed(0)} g dépassé</span>
+                        : <span className="text-slate-300 text-[10px] font-medium">{(profile.fatGoal - totals.fat).toFixed(0)} g restants</span>
+                      }
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[#38BDF8] font-bold text-sm">Glucides</span>
                       <span className="text-xl font-black text-slate-800">{totals.carbs.toFixed(0)} g</span>
-                      <span className="text-slate-300 text-xs font-medium">{Math.max(0, profile.carbsGoal - totals.carbs).toFixed(0)} g restantes</span>
+                      <span className="text-slate-400 text-[10px] font-medium">/ {profile.carbsGoal} g</span>
+                      {totals.carbs > profile.carbsGoal
+                        ? <span className="text-red-400 text-[10px] font-bold">+{(totals.carbs - profile.carbsGoal).toFixed(0)} g dépassé</span>
+                        : <span className="text-slate-300 text-[10px] font-medium">{(profile.carbsGoal - totals.carbs).toFixed(0)} g restants</span>
+                      }
                     </div>
                   </div>
                   <div className="flex items-center justify-between bg-indigo-50/50 p-4 rounded-3xl border border-indigo-100/50">
