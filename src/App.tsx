@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -1206,8 +1207,8 @@ export default function App() {
 
       {/* ─── History Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={isHistoryOpen} onOpenChange={(open) => { setIsHistoryOpen(open); if (!open) { setHistorySearch(""); } }}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden" style={{ height: '92vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="p-5 pb-0 border-b bg-white flex-shrink-0">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
+          <div className="p-5 pb-0 border-b bg-white">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 mb-4">
                 <History className="w-5 h-5 text-indigo-500" />
@@ -1252,8 +1253,10 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
-            <div style={{ position: 'absolute', inset: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '1.25rem' }}>
+          <div
+            className="overflow-y-scroll p-5 flex-1 min-h-0"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             {filteredHistory.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between mb-1">
@@ -1304,7 +1307,6 @@ export default function App() {
                 </div>
               </div>
             )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1353,8 +1355,9 @@ export default function App() {
             </DialogHeader>
           </div>
           <div
-style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
-            <div style={{ position: 'absolute', inset: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '1.5rem', paddingTop: '1rem' }}>
+            className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             <div className="grid grid-cols-1 gap-3">
               {searchResults.map((product) => (
                 <button
@@ -1412,15 +1415,14 @@ style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
                 </Button>
               </div>
             </div>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* ─── Scanner Dialog ──────────────────────────────────────────────────── */}
       <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); }}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden" style={{ height: '92vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="p-6 pb-4 border-b bg-white flex-shrink-0">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
+          <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
               <DialogTitle>
                 {activeMealIndex !== null
@@ -1431,8 +1433,9 @@ style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
             </DialogHeader>
           </div>
           <div
-style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
-            <div style={{ position: 'absolute', inset: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '1.5rem', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0 space-y-6"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             <div className="space-y-2">
               <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scanner ou Saisir</h4>
               <Scanner
@@ -1467,7 +1470,6 @@ style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
                 Recherche du produit...
               </div>
             )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1628,10 +1630,10 @@ style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
           setMealHistoryTab("recent");
         }
       }}>
-        <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden" style={{ height: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <DialogContent className="sm:max-w-md rounded-3xl h-[80vh] flex flex-col p-0 overflow-hidden">
           {selectedMealForView !== null && (
             <>
-              <div className="p-6 bg-slate-50 border-b flex-shrink-0">
+              <div className="p-6 bg-slate-50 border-b">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     {meals[selectedMealForView]?.title || "Repas"}
@@ -1646,8 +1648,9 @@ style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
               </div>
 
               <div
-style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
-                <div style={{ position: 'absolute', inset: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                className="flex-1 overflow-y-scroll min-h-0 p-6 space-y-8"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
                 <div className="space-y-4">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aliments consommés</h4>
                   {meals[selectedMealForView].products.length === 0 ? (
@@ -1800,9 +1803,7 @@ style={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
                 </div>
               </div>
 
-                </div>
-              </div>
-              <div className="p-6 border-t bg-slate-50 flex-shrink-0">
+              <div className="p-6 border-t bg-slate-50">
                 <Button
                   className="w-full bg-orange-500 hover:bg-orange-600 rounded-xl h-12 font-bold"
                   onClick={() => {
