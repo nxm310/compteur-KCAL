@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -302,6 +301,19 @@ export default function App() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const scannerRef = useRef<ScannerHandle>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
+
+  // iOS fix : force scroll activation au premier rendu du dialog
+  useEffect(() => {
+    if (!isHistoryOpen) return;
+    const timer = setTimeout(() => {
+      if (historyScrollRef.current) {
+        historyScrollRef.current.scrollTop = 1;
+        historyScrollRef.current.scrollTop = 0;
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isHistoryOpen]);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [tempActivityName, setTempActivityName] = useState("");
   const [tempActivityKcal, setTempActivityKcal] = useState(0);
@@ -566,6 +578,42 @@ export default function App() {
   const [selectedMealForView, setSelectedMealForView] = useState<number | null>(null);
   const [mealHistorySearch, setMealHistorySearch] = useState("");
   const [mealHistoryTab, setMealHistoryTab] = useState<"recent" | "favorites">("recent");
+  const searchScrollRef = useRef<HTMLDivElement>(null);
+  const scannerScrollRef = useRef<HTMLDivElement>(null);
+  const mealScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isSearchModalOpen) return;
+    const timer = setTimeout(() => {
+      if (searchScrollRef.current) {
+        searchScrollRef.current.scrollTop = 1;
+        searchScrollRef.current.scrollTop = 0;
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isSearchModalOpen]);
+
+  useEffect(() => {
+    if (!isScannerOpen) return;
+    const timer = setTimeout(() => {
+      if (scannerScrollRef.current) {
+        scannerScrollRef.current.scrollTop = 1;
+        scannerScrollRef.current.scrollTop = 0;
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isScannerOpen]);
+
+  useEffect(() => {
+    if (selectedMealForView === null) return;
+    const timer = setTimeout(() => {
+      if (mealScrollRef.current) {
+        mealScrollRef.current.scrollTop = 1;
+        mealScrollRef.current.scrollTop = 0;
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [selectedMealForView]);
 
   // ─── Export / Import ──────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
@@ -1254,6 +1302,7 @@ export default function App() {
           </div>
 
           <div
+            ref={historyScrollRef}
             className="overflow-y-scroll p-5 flex-1 min-h-0"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
@@ -1355,6 +1404,7 @@ export default function App() {
             </DialogHeader>
           </div>
           <div
+            ref={searchScrollRef}
             className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
@@ -1433,6 +1483,7 @@ export default function App() {
             </DialogHeader>
           </div>
           <div
+            ref={scannerScrollRef}
             className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0 space-y-6"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
@@ -1648,6 +1699,7 @@ export default function App() {
               </div>
 
               <div
+                ref={mealScrollRef}
                 className="flex-1 overflow-y-scroll min-h-0 p-6 space-y-8"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
