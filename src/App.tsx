@@ -790,7 +790,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Header */}
-      <header className="px-6 pt-8 pb-6 flex flex-col items-center relative bg-white border-b border-slate-100">
+      <header className="px-6 pt-8 pb-6 flex flex-col items-center relative bg-white border-b border-slate-100 sticky top-0 z-40 shadow-sm">
         <div className="w-full flex justify-between items-center">
           <div className="flex items-center">
             {view === "dashboard" ? (
