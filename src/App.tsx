@@ -315,6 +315,29 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [isHistoryOpen]);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  const [tempWeightInput, setTempWeightInput] = useState<number | string>("");
+
+  // Historique du poids : { date: string, weight: number }[]
+  const [weightHistory, setWeightHistory] = useState<{ date: string; weight: number }[]>(() => {
+    try {
+      const saved = localStorage.getItem("calo_weight_history_v1");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("calo_weight_history_v1", JSON.stringify(weightHistory));
+  }, [weightHistory]);
+
+  const logWeight = (w: number) => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    setWeightHistory(prev => {
+      const filtered = prev.filter(e => e.date !== today);
+      return [...filtered, { date: today, weight: w }].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    setProfile(prev => ({ ...prev, currentWeight: w }));
+  };
   const [tempActivityName, setTempActivityName] = useState("");
   const [tempActivityKcal, setTempActivityKcal] = useState(0);
   const [activeMealIndex, setActiveMealIndex] = useState<number | null>(null);
@@ -1004,20 +1027,40 @@ export default function App() {
               </button>
             </motion.div>
 
-            {/* Activities Card */}
+            {/* Activities Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
+              transition={{ duration: 0.4, delay: 0.5 }}
             >
               <button
-                className="w-full bg-[#007AFF] hover:bg-blue-600 active:bg-blue-700 text-white rounded-[2rem] h-14 font-black text-lg shadow-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
                 onClick={() => setIsActivityModalOpen(true)}
+                className="w-full h-16 bg-[#007AFF] hover:bg-blue-600 active:bg-blue-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-blue-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
               >
-                <div className="bg-white/20 p-1.5 rounded-xl">
-                  <Footprints className="w-5 h-5 text-white" />
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Footprints className="w-5 h-5" />
                 </div>
                 Ajouter un exercice
+              </button>
+            </motion.div>
+
+            {/* Weight Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.6 }}
+            >
+              <button
+                onClick={() => { setTempWeightInput(profile.currentWeight); setIsWeightModalOpen(true); }}
+                className="w-full h-16 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              >
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div className="flex flex-col items-start leading-tight">
+                  <span>Poids actuel</span>
+                  <span className="text-sm font-bold opacity-80">{profile.currentWeight} kg — objectif {profile.goalWeight} kg</span>
+                </div>
               </button>
             </motion.div>
           </motion.main>
@@ -1098,9 +1141,106 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="space-y-4 pt-4 border-t">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-orange-500" />
+              {/* ── Graphique évolution du poids ── */}
+              {weightHistory.length > 0 && (
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Scale className="w-5 h-5 text-emerald-500" />
+                    Évolution du poids
+                  </h3>
+                  <div className="bg-slate-50 rounded-2xl p-4">
+                    {(() => {
+                      const all = weightHistory;
+                      const first = all[0]?.weight ?? profile.currentWeight;
+                      const goal = profile.goalWeight;
+                      const min = Math.min(...all.map(e => e.weight), goal) - 1;
+                      const max = Math.max(...all.map(e => e.weight), first) + 1;
+                      const range = max - min || 1;
+                      const W = 320, H = 140, padX = 32, padY = 16;
+                      const innerW = W - padX * 2;
+                      const innerH = H - padY * 2;
+                      const toX = (i: number) => padX + (i / Math.max(all.length - 1, 1)) * innerW;
+                      const toY = (w: number) => padY + (1 - (w - min) / range) * innerH;
+                      const points = all.map((e, i) => `${toX(i)},${toY(e.weight)}`).join(" ");
+                      const goalY = toY(goal);
+                      const losing = goal < first;
+                      return (
+                        <div className="space-y-2">
+                          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 140 }}>
+                            {/* Goal line */}
+                            <line x1={padX} y1={goalY} x2={W - padX} y2={goalY}
+                              stroke="#10B981" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.6" />
+                            <text x={W - padX + 2} y={goalY + 4} fontSize="9" fill="#10B981" fontWeight="bold">
+                              {goal}kg
+                            </text>
+                            {/* Area fill */}
+                            {all.length > 1 && (
+                              <polyline
+                                points={`${toX(0)},${H - padY} ${points} ${toX(all.length - 1)},${H - padY}`}
+                                fill="#10B981" fillOpacity="0.08" stroke="none"
+                              />
+                            )}
+                            {/* Line */}
+                            {all.length > 1 && (
+                              <polyline points={points} fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            )}
+                            {/* Dots */}
+                            {all.map((e, i) => (
+                              <g key={i}>
+                                <circle cx={toX(i)} cy={toY(e.weight)} r="4" fill="white" stroke="#10B981" strokeWidth="2" />
+                                <text x={toX(i)} y={toY(e.weight) - 8} textAnchor="middle" fontSize="9" fill="#374151" fontWeight="bold">
+                                  {e.weight}
+                                </text>
+                              </g>
+                            ))}
+                          </svg>
+                          {/* Labels dates */}
+                          <div className="flex justify-between px-8">
+                            <span className="text-[9px] text-slate-400">{format(parseISO(all[0].date), "d MMM", { locale: fr })}</span>
+                            {all.length > 2 && (
+                              <span className="text-[9px] text-slate-400">{format(parseISO(all[Math.floor(all.length / 2)].date), "d MMM", { locale: fr })}</span>
+                            )}
+                            <span className="text-[9px] text-slate-400">{format(parseISO(all[all.length - 1].date), "d MMM", { locale: fr })}</span>
+                          </div>
+                          {/* Stats */}
+                          <div className="grid grid-cols-3 gap-2 pt-1">
+                            <div className="text-center bg-white rounded-xl p-2">
+                              <p className="text-[10px] text-slate-400">Départ</p>
+                              <p className="text-sm font-black text-slate-700">{first} kg</p>
+                            </div>
+                            <div className="text-center bg-white rounded-xl p-2">
+                              <p className="text-[10px] text-slate-400">Actuel</p>
+                              <p className="text-sm font-black text-emerald-600">{profile.currentWeight} kg</p>
+                            </div>
+                            <div className="text-center bg-white rounded-xl p-2">
+                              <p className="text-[10px] text-slate-400">Restant</p>
+                              <p className={`text-sm font-black ${Math.abs(profile.currentWeight - goal) < 0.5 ? 'text-emerald-500' : 'text-slate-700'}`}>
+                                {Math.abs(profile.currentWeight - goal).toFixed(1)} kg
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setWeightHistory([])}
+                            className="text-[10px] text-slate-300 hover:text-red-400 w-full text-center transition-colors"
+                          >
+                            Effacer l'historique du poids
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {weightHistory.length === 0 && (
+                <div className="pt-4 border-t">
+                  <div className="bg-slate-50 rounded-2xl p-4 text-center space-y-1">
+                    <Scale className="w-6 h-6 text-slate-300 mx-auto" />
+                    <p className="text-xs font-bold text-slate-400">Aucune donnée de poids</p>
+                    <p className="text-[10px] text-slate-300">Enregistrez votre poids depuis le tableau de bord pour voir l'évolution.</p>
+                  </div>
+                </div>
+              )}
                   Objectif Calories
                 </h3>
                 <div className="space-y-2">
@@ -1859,6 +1999,46 @@ export default function App() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Weight Modal ──────────────────────────────────────────────────── */}
+      <Dialog open={isWeightModalOpen} onOpenChange={setIsWeightModalOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Scale className="w-5 h-5 text-emerald-500" />
+              Enregistrer mon poids
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-slate-500">Poids actuel (kg)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder={String(profile.currentWeight)}
+                value={tempWeightInput === 0 ? '' : tempWeightInput}
+                onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempWeightInput(v === '' ? '' : v); }}
+                className="rounded-xl text-2xl font-black h-14 text-center"
+                autoFocus
+              />
+              <p className="text-xs text-slate-400 text-center">Objectif : {profile.goalWeight} kg · Écart : {Math.abs(Number(tempWeightInput || profile.currentWeight) - profile.goalWeight).toFixed(1)} kg</p>
+            </div>
+            <Button
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-emerald-200"
+              onClick={() => {
+                const w = parseFloat(String(tempWeightInput));
+                if (!isNaN(w) && w > 0) {
+                  logWeight(w);
+                  setIsWeightModalOpen(false);
+                }
+              }}
+              disabled={!tempWeightInput || isNaN(parseFloat(String(tempWeightInput)))}
+            >
+              Enregistrer
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
