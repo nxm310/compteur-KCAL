@@ -91,6 +91,7 @@ interface Activity {
 
 interface UserProfile {
   currentWeight: number;
+  startWeight: number;
   goalWeight: number;
   calorieGoal: number;
   proteinGoal: number;
@@ -107,6 +108,7 @@ type Sex = "male" | "female";
 
 const DEFAULT_PROFILE: UserProfile = {
   currentWeight: 75,
+  startWeight: 75,
   goalWeight: 70,
   calorieGoal: 2000,
   proteinGoal: 150,
@@ -336,6 +338,7 @@ export default function App() {
       const filtered = prev.filter(e => e.date !== today);
       return [...filtered, { date: today, weight: w }].sort((a, b) => a.date.localeCompare(b.date));
     });
+    // Met à jour le poids actuel uniquement (startWeight reste intact)
     setProfile(prev => ({ ...prev, currentWeight: w }));
   };
   const [tempActivityName, setTempActivityName] = useState("");
@@ -1059,7 +1062,7 @@ export default function App() {
                 </div>
                 <div className="flex flex-col items-start leading-tight">
                   <span>Poids actuel</span>
-                  <span className="text-sm font-bold opacity-80">{profile.currentWeight} kg — objectif {profile.goalWeight} kg</span>
+                  <span className="text-sm font-bold opacity-80">{profile.currentWeight} kg → objectif {profile.goalWeight} kg</span>
                 </div>
               </button>
             </motion.div>
@@ -1110,6 +1113,12 @@ export default function App() {
                       className="rounded-xl" />
                   </div>
                   <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Poids de départ (kg)</Label>
+                    <Input type="number" value={profile.startWeight}
+                      onChange={(e) => setProfile({...profile, startWeight: Number(e.target.value)})}
+                      className="rounded-xl" />
+                  </div>
+                  <div className="space-y-2">
                     <Label className="text-xs text-slate-500">Poids actuel (kg)</Label>
                     <Input type="number" value={profile.currentWeight}
                       onChange={(e) => setProfile({...profile, currentWeight: Number(e.target.value)})}
@@ -1142,105 +1151,148 @@ export default function App() {
               </div>
 
               {/* ── Graphique évolution du poids ── */}
-              {weightHistory.length > 0 && (
-                <div className="space-y-3 pt-4 border-t">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-emerald-500" />
-                    Évolution du poids
-                  </h3>
-                  <div className="bg-slate-50 rounded-2xl p-4">
-                    {(() => {
-                      const all = weightHistory;
-                      const first = all[0]?.weight ?? profile.currentWeight;
-                      const goal = profile.goalWeight;
-                      const min = Math.min(...all.map(e => e.weight), goal) - 1;
-                      const max = Math.max(...all.map(e => e.weight), first) + 1;
-                      const range = max - min || 1;
-                      const W = 320, H = 140, padX = 32, padY = 16;
-                      const innerW = W - padX * 2;
-                      const innerH = H - padY * 2;
-                      const toX = (i: number) => padX + (i / Math.max(all.length - 1, 1)) * innerW;
-                      const toY = (w: number) => padY + (1 - (w - min) / range) * innerH;
-                      const points = all.map((e, i) => `${toX(i)},${toY(e.weight)}`).join(" ");
-                      const goalY = toY(goal);
-                      const losing = goal < first;
-                      return (
-                        <div className="space-y-2">
-                          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 140 }}>
-                            {/* Goal line */}
-                            <line x1={padX} y1={goalY} x2={W - padX} y2={goalY}
-                              stroke="#10B981" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.6" />
-                            <text x={W - padX + 2} y={goalY + 4} fontSize="9" fill="#10B981" fontWeight="bold">
-                              {goal}kg
-                            </text>
-                            {/* Area fill */}
-                            {all.length > 1 && (
-                              <polyline
-                                points={`${toX(0)},${H - padY} ${points} ${toX(all.length - 1)},${H - padY}`}
-                                fill="#10B981" fillOpacity="0.08" stroke="none"
-                              />
-                            )}
-                            {/* Line */}
-                            {all.length > 1 && (
-                              <polyline points={points} fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                            )}
-                            {/* Dots */}
-                            {all.map((e, i) => (
-                              <g key={i}>
-                                <circle cx={toX(i)} cy={toY(e.weight)} r="4" fill="white" stroke="#10B981" strokeWidth="2" />
-                                <text x={toX(i)} y={toY(e.weight) - 8} textAnchor="middle" fontSize="9" fill="#374151" fontWeight="bold">
-                                  {e.weight}
-                                </text>
-                              </g>
-                            ))}
-                          </svg>
-                          {/* Labels dates */}
-                          <div className="flex justify-between px-8">
-                            <span className="text-[9px] text-slate-400">{format(parseISO(all[0].date), "d MMM", { locale: fr })}</span>
-                            {all.length > 2 && (
-                              <span className="text-[9px] text-slate-400">{format(parseISO(all[Math.floor(all.length / 2)].date), "d MMM", { locale: fr })}</span>
-                            )}
-                            <span className="text-[9px] text-slate-400">{format(parseISO(all[all.length - 1].date), "d MMM", { locale: fr })}</span>
-                          </div>
-                          {/* Stats */}
-                          <div className="grid grid-cols-3 gap-2 pt-1">
-                            <div className="text-center bg-white rounded-xl p-2">
-                              <p className="text-[10px] text-slate-400">Départ</p>
-                              <p className="text-sm font-black text-slate-700">{first} kg</p>
-                            </div>
-                            <div className="text-center bg-white rounded-xl p-2">
-                              <p className="text-[10px] text-slate-400">Actuel</p>
-                              <p className="text-sm font-black text-emerald-600">{profile.currentWeight} kg</p>
-                            </div>
-                            <div className="text-center bg-white rounded-xl p-2">
-                              <p className="text-[10px] text-slate-400">Restant</p>
-                              <p className={`text-sm font-black ${Math.abs(profile.currentWeight - goal) < 0.5 ? 'text-emerald-500' : 'text-slate-700'}`}>
-                                {Math.abs(profile.currentWeight - goal).toFixed(1)} kg
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setWeightHistory([])}
-                            className="text-[10px] text-slate-300 hover:text-red-400 w-full text-center transition-colors"
-                          >
-                            Effacer l'historique du poids
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
+              <div className="space-y-3 pt-4 border-t">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                  <Scale className="w-5 h-5 text-emerald-500" />
+                  Évolution du poids
+                </h3>
+                <div className="bg-slate-50 rounded-2xl p-4">
+                  {(() => {
+                    // Point de départ fixe + historique des pesées
+                    const startEntry = { date: weightHistory[0]?.date ?? format(new Date(), "yyyy-MM-dd"), weight: profile.startWeight };
+                    const all = weightHistory.length > 0
+                      ? [startEntry, ...weightHistory.filter(e => e.weight !== profile.startWeight || e.date !== startEntry.date)]
+                      : [startEntry];
 
-              {weightHistory.length === 0 && (
-                <div className="pt-4 border-t">
-                  <div className="bg-slate-50 rounded-2xl p-4 text-center space-y-1">
-                    <Scale className="w-6 h-6 text-slate-300 mx-auto" />
-                    <p className="text-xs font-bold text-slate-400">Aucune donnée de poids</p>
-                    <p className="text-[10px] text-slate-300">Enregistrez votre poids depuis le tableau de bord pour voir l'évolution.</p>
-                  </div>
+                    const goal = profile.goalWeight;
+                    const weights = all.map(e => e.weight);
+                    const minW = Math.min(...weights, goal) - 1;
+                    const maxW = Math.max(...weights, profile.startWeight) + 1;
+                    const range = maxW - minW || 1;
+
+                    const W = 320, H = 150, padL = 36, padR = 16, padT = 16, padB = 20;
+                    const innerW = W - padL - padR;
+                    const innerH = H - padT - padB;
+
+                    // Dates → position X proportionnelle au temps
+                    const dates = all.map(e => new Date(e.date).getTime());
+                    const minDate = dates[0];
+                    const maxDate = Math.max(...dates, minDate + 86400000);
+                    const timeRange = maxDate - minDate || 1;
+
+                    const toX = (date: string) => padL + ((new Date(date).getTime() - minDate) / timeRange) * innerW;
+                    const toY = (w: number) => padT + (1 - (w - minW) / range) * innerH;
+                    const goalY = toY(goal);
+
+                    const points = all.map(e => `${toX(e.date)},${toY(e.weight)}`).join(" ");
+
+                    // Axe Y : quelques graduations
+                    const yTicks = Array.from({ length: 4 }, (_, i) => minW + Math.round((range / 3) * i * 10) / 10);
+
+                    return (
+                      <div className="space-y-2">
+                        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 150 }}>
+                          {/* Graduations Y */}
+                          {yTicks.map((t, i) => (
+                            <g key={i}>
+                              <line x1={padL} y1={toY(t)} x2={W - padR} y2={toY(t)}
+                                stroke="#E2E8F0" strokeWidth="1" />
+                              <text x={padL - 3} y={toY(t) + 3} textAnchor="end" fontSize="8" fill="#94A3B8">
+                                {t.toFixed(0)}
+                              </text>
+                            </g>
+                          ))}
+
+                          {/* Ligne objectif en pointillé */}
+                          <line x1={padL} y1={goalY} x2={W - padR} y2={goalY}
+                            stroke="#10B981" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.7" />
+                          <text x={W - padR + 1} y={goalY + 3} fontSize="8" fill="#10B981" fontWeight="bold">
+                            {goal}
+                          </text>
+
+                          {/* Zone remplie */}
+                          {all.length > 1 && (
+                            <polyline
+                              points={`${toX(all[0].date)},${H - padB} ${points} ${toX(all[all.length - 1].date)},${H - padB}`}
+                              fill="#10B981" fillOpacity="0.08" stroke="none"
+                            />
+                          )}
+
+                          {/* Courbe */}
+                          {all.length > 1 && (
+                            <polyline points={points} fill="none"
+                              stroke="#10B981" strokeWidth="2.5"
+                              strokeLinecap="round" strokeLinejoin="round" />
+                          )}
+
+                          {/* Points + valeurs */}
+                          {all.map((e, i) => (
+                            <g key={i}>
+                              <circle cx={toX(e.date)} cy={toY(e.weight)} r="4"
+                                fill="white" stroke="#10B981" strokeWidth="2" />
+                              <text x={toX(e.date)} y={toY(e.weight) - 7}
+                                textAnchor="middle" fontSize="9" fill="#374151" fontWeight="bold">
+                                {e.weight}
+                              </text>
+                            </g>
+                          ))}
+
+                          {/* Axe X : dates */}
+                          {all.map((e, i) => {
+                            // N'afficher que 1ère, dernière, et milieu si > 3 points
+                            const show = i === 0 || i === all.length - 1 || (all.length > 3 && i === Math.floor(all.length / 2));
+                            if (!show) return null;
+                            return (
+                              <text key={i} x={toX(e.date)} y={H - 3}
+                                textAnchor={i === 0 ? "start" : i === all.length - 1 ? "end" : "middle"}
+                                fontSize="8" fill="#94A3B8">
+                                {format(parseISO(e.date), "d MMM", { locale: fr })}
+                              </text>
+                            );
+                          })}
+                        </svg>
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                          <div className="text-center bg-white rounded-xl p-2">
+                            <p className="text-[10px] text-slate-400">Départ</p>
+                            <p className="text-sm font-black text-slate-700">{profile.startWeight} kg</p>
+                          </div>
+                          <div className="text-center bg-white rounded-xl p-2">
+                            <p className="text-[10px] text-slate-400">Actuel</p>
+                            <p className="text-sm font-black text-emerald-600">{profile.currentWeight} kg</p>
+                          </div>
+                          <div className="text-center bg-white rounded-xl p-2">
+                            <p className="text-[10px] text-slate-400">Objectif</p>
+                            <p className="text-sm font-black text-slate-600">{goal} kg</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <p className="text-[10px] text-slate-400">
+                            {weightHistory.length} pesée{weightHistory.length > 1 ? 's' : ''} enregistrée{weightHistory.length > 1 ? 's' : ''}
+                            {' · '}
+                            {profile.currentWeight > goal
+                              ? `${(profile.currentWeight - goal).toFixed(1)} kg à perdre`
+                              : profile.currentWeight < goal
+                                ? `${(goal - profile.currentWeight).toFixed(1)} kg à prendre`
+                                : '🎯 Objectif atteint !'
+                            }
+                          </p>
+                          {weightHistory.length > 0 && (
+                            <button
+                              onClick={() => setWeightHistory([])}
+                              className="text-[10px] text-slate-300 hover:text-red-400 transition-colors"
+                            >
+                              Effacer
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
-              )}
+              </div>
 
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
