@@ -335,11 +335,11 @@ export default function App() {
   const [scannedProduct, setScannedProduct] = useState<UnifiedProduct | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [tempName, setTempName] = useState("");
-  const [tempQuantity, setTempQuantity] = useState(100);
-  const [tempKcal, setTempKcal] = useState(0);
-  const [tempProtein, setTempProtein] = useState(0);
-  const [tempCarbs, setTempCarbs] = useState(0);
-  const [tempFat, setTempFat] = useState(0);
+  const [tempQuantity, setTempQuantity] = useState<number | string>(100);
+  const [tempKcal, setTempKcal] = useState<number | string>(0);
+  const [tempProtein, setTempProtein] = useState<number | string>(0);
+  const [tempCarbs, setTempCarbs] = useState<number | string>(0);
+  const [tempFat, setTempFat] = useState<number | string>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<UnifiedProduct[]>([]);
@@ -488,11 +488,11 @@ export default function App() {
       const newProduct: LoggedProduct = {
         id: Math.random().toString(36).substr(2, 9),
         name: tempName || scannedProduct.name || "Produit inconnu",
-        kcalPer100g: tempKcal,
-        proteinPer100g: tempProtein,
-        carbsPer100g: tempCarbs,
-        fatPer100g: tempFat,
-        quantityGrams: tempQuantity,
+        kcalPer100g: Number(tempKcal) || 0,
+        proteinPer100g: Number(tempProtein) || 0,
+        carbsPer100g: Number(tempCarbs) || 0,
+        fatPer100g: Number(tempFat) || 0,
+        quantityGrams: Number(tempQuantity) || 0,
         imageUrl: scannedProduct.imageUrl,
       };
       const updatedMeals = [...meals];
@@ -512,11 +512,11 @@ export default function App() {
       const newProduct: LoggedProduct = {
         id: Math.random().toString(36).substr(2, 9),
         name: tempName || scannedProduct.name || "Produit inconnu",
-        kcalPer100g: tempKcal,
-        proteinPer100g: tempProtein,
-        carbsPer100g: tempCarbs,
-        fatPer100g: tempFat,
-        quantityGrams: tempQuantity,
+        kcalPer100g: Number(tempKcal) || 0,
+        proteinPer100g: Number(tempProtein) || 0,
+        carbsPer100g: Number(tempCarbs) || 0,
+        fatPer100g: Number(tempFat) || 0,
+        quantityGrams: Number(tempQuantity) || 0,
         imageUrl: scannedProduct.imageUrl,
       };
       setProductHistory(prev => {
@@ -1470,7 +1470,7 @@ export default function App() {
       </Dialog>
 
       {/* ─── Scanner Dialog ──────────────────────────────────────────────────── */}
-      <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); }}>
+      <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); if (open) setTempName(""); }}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
           <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
@@ -1529,7 +1529,7 @@ export default function App() {
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[90vh] overflow-y-auto p-6">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
+            <DialogTitle className="flex items-center justify-between pr-8">
               <span>Détails du produit</span>
               {scannedProduct && (
                 <button
@@ -1568,9 +1568,11 @@ export default function App() {
                   />
                   <div className="flex items-center gap-2">
                     <Input
-                      type="number"
-                      value={tempKcal}
-                      onChange={(e) => setTempKcal(Number(e.target.value))}
+                      type="text"
+                      inputMode="decimal"
+                      value={tempKcal === 0 ? '' : tempKcal}
+                      onChange={(e) => { const v = e.target.value; setTempKcal(v === '' ? '' : v); }}
+                      onBlur={(e) => { if (e.target.value === '') setTempKcal(0); }}
                       className="h-8 w-20 text-sm font-bold border-orange-200 focus:border-orange-500"
                     />
                     <span className="text-xs text-slate-500 font-medium">kcal / 100g</span>
@@ -1583,15 +1585,15 @@ export default function App() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Dna className="w-3 h-3" /> Protéines</Label>
-                    <Input type="number" value={tempProtein} onChange={(e) => setTempProtein(Number(e.target.value))} className="h-10 rounded-xl border-blue-100 focus:border-blue-500" />
+                    <Input type="text" inputMode="decimal" value={tempProtein === 0 ? '' : tempProtein} onChange={(e) => { const v = e.target.value; setTempProtein(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }} className="h-10 rounded-xl border-blue-100 focus:border-blue-500" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1"><Wheat className="w-3 h-3" /> Glucides</Label>
-                    <Input type="number" value={tempCarbs} onChange={(e) => setTempCarbs(Number(e.target.value))} className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500" />
+                    <Input type="text" inputMode="decimal" value={tempCarbs === 0 ? '' : tempCarbs} onChange={(e) => { const v = e.target.value; setTempCarbs(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }} className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Droplets className="w-3 h-3" /> Lipides</Label>
-                    <Input type="number" value={tempFat} onChange={(e) => setTempFat(Number(e.target.value))} className="h-10 rounded-xl border-red-100 focus:border-red-500" />
+                    <Input type="text" inputMode="decimal" value={tempFat === 0 ? '' : tempFat} onChange={(e) => { const v = e.target.value; setTempFat(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempFat(0); }} className="h-10 rounded-xl border-red-100 focus:border-red-500" />
                   </div>
                 </div>
               </div>
@@ -1602,9 +1604,11 @@ export default function App() {
                   <div className="relative flex-1">
                     <Input
                       id="quantity"
-                      type="number"
-                      value={tempQuantity}
-                      onChange={(e) => setTempQuantity(Number(e.target.value))}
+                      type="text"
+                      inputMode="decimal"
+                      value={tempQuantity === '' ? '' : tempQuantity}
+                      onChange={(e) => { const v = e.target.value; setTempQuantity(v === '' ? '' : v); }}
+                      onBlur={(e) => { if (e.target.value === '') setTempQuantity(100); }}
                       className="rounded-2xl h-12 text-lg font-bold pr-8 border-slate-200 focus:border-orange-500"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">g</span>
@@ -1612,7 +1616,7 @@ export default function App() {
                   <div className="bg-orange-50 px-4 py-2 rounded-2xl border border-orange-100">
                     <p className="text-[10px] text-orange-600 font-bold uppercase">Total</p>
                     <p className="text-xl font-black text-orange-600 leading-none">
-                      {(tempKcal * tempQuantity / 100).toFixed(0)} <span className="text-xs">kcal</span>
+                      {((Number(tempKcal)||0) * (Number(tempQuantity)||0) / 100).toFixed(0)} <span className="text-xs">kcal</span>
                     </p>
                   </div>
                 </div>
