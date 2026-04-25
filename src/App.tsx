@@ -319,6 +319,7 @@ export default function App() {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [tempWeightInput, setTempWeightInput] = useState<number | string>("");
+  const [tempWeightDate, setTempWeightDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   // Historique du poids : { date: string, weight: number }[]
   const [weightHistory, setWeightHistory] = useState<{ date: string; weight: number }[]>(() => {
@@ -332,11 +333,11 @@ export default function App() {
     localStorage.setItem("calo_weight_history_v1", JSON.stringify(weightHistory));
   }, [weightHistory]);
 
-  const logWeight = (w: number) => {
-    const today = format(new Date(), "yyyy-MM-dd");
+  const logWeight = (w: number, date?: string) => {
+    const day = date ?? format(new Date(), "yyyy-MM-dd");
     setWeightHistory(prev => {
-      const filtered = prev.filter(e => e.date !== today);
-      return [...filtered, { date: today, weight: w }].sort((a, b) => a.date.localeCompare(b.date));
+      const filtered = prev.filter(e => e.date !== day);
+      return [...filtered, { date: day, weight: w }].sort((a, b) => a.date.localeCompare(b.date));
     });
     // Met à jour le poids actuel uniquement (startWeight reste intact)
     setProfile(prev => ({ ...prev, currentWeight: w }));
@@ -1054,7 +1055,7 @@ export default function App() {
               transition={{ duration: 0.4, delay: 0.6 }}
             >
               <button
-                onClick={() => { setTempWeightInput(profile.currentWeight); setIsWeightModalOpen(true); }}
+                onClick={() => { setTempWeightInput(profile.currentWeight); setTempWeightDate(format(new Date(), "yyyy-MM-dd")); setIsWeightModalOpen(true); }}
                 className="w-full h-16 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
               >
                 <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
@@ -2067,9 +2068,54 @@ export default function App() {
               Enregistrer mon poids
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-6 py-4">
+          <div className="space-y-5 py-4">
+
+            {/* Sélecteur de date */}
             <div className="space-y-2">
-              <Label className="text-sm font-bold text-slate-500">Poids actuel (kg)</Label>
+              <Label className="text-sm font-bold text-slate-500">Date</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setTempWeightDate(format(new Date(), "yyyy-MM-dd"))}
+                  className={`h-9 rounded-xl text-xs font-bold transition-all border-2 ${
+                    tempWeightDate === format(new Date(), "yyyy-MM-dd")
+                      ? "bg-emerald-500 text-white border-emerald-500"
+                      : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"
+                  }`}
+                >
+                  Aujourd'hui
+                </button>
+                <button
+                  onClick={() => setTempWeightDate(format(subDays(new Date(), 1), "yyyy-MM-dd"))}
+                  className={`h-9 rounded-xl text-xs font-bold transition-all border-2 ${
+                    tempWeightDate === format(subDays(new Date(), 1), "yyyy-MM-dd")
+                      ? "bg-emerald-500 text-white border-emerald-500"
+                      : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"
+                  }`}
+                >
+                  Hier
+                </button>
+                <button
+                  onClick={() => setTempWeightDate(format(subDays(new Date(), 2), "yyyy-MM-dd"))}
+                  className={`h-9 rounded-xl text-xs font-bold transition-all border-2 ${
+                    tempWeightDate === format(subDays(new Date(), 2), "yyyy-MM-dd")
+                      ? "bg-emerald-500 text-white border-emerald-500"
+                      : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"
+                  }`}
+                >
+                  Avant-hier
+                </button>
+              </div>
+              <Input
+                type="date"
+                value={tempWeightDate}
+                onChange={(e) => setTempWeightDate(e.target.value)}
+                className="rounded-xl h-10 text-sm text-slate-600"
+              />
+            </div>
+
+            {/* Poids */}
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-slate-500">Poids (kg)</Label>
               <Input
                 type="text"
                 inputMode="decimal"
@@ -2079,20 +2125,23 @@ export default function App() {
                 className="rounded-xl text-2xl font-black h-14 text-center"
                 autoFocus
               />
-              <p className="text-xs text-slate-400 text-center">Objectif : {profile.goalWeight} kg · Écart : {Math.abs(Number(tempWeightInput || profile.currentWeight) - profile.goalWeight).toFixed(1)} kg</p>
+              <p className="text-xs text-slate-400 text-center">
+                Objectif : {profile.goalWeight} kg · Écart : {Math.abs(Number(tempWeightInput || profile.currentWeight) - profile.goalWeight).toFixed(1)} kg
+              </p>
             </div>
+
             <Button
               className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl h-14 font-bold text-lg shadow-lg shadow-emerald-200"
               onClick={() => {
                 const w = parseFloat(String(tempWeightInput));
                 if (!isNaN(w) && w > 0) {
-                  logWeight(w);
+                  logWeight(w, tempWeightDate);
                   setIsWeightModalOpen(false);
                 }
               }}
               disabled={!tempWeightInput || isNaN(parseFloat(String(tempWeightInput)))}
             >
-              Enregistrer
+              Enregistrer le {format(parseISO(tempWeightDate), "d MMM", { locale: fr })}
             </Button>
           </div>
         </DialogContent>
