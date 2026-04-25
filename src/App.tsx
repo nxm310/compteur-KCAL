@@ -797,10 +797,10 @@ export default function App() {
               <Button
                 variant="secondary"
                 size="icon"
-                className="rounded-2xl w-10 h-10 bg-slate-50 border border-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-all"
+                className="rounded-2xl w-14 h-14 bg-slate-50 border border-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-all"
                 onClick={() => setIsHistoryOpen(true)}
               >
-                <History className="w-5 h-5" />
+                <History className="w-6 h-6" />
               </Button>
             ) : (
               <Button
@@ -852,14 +852,14 @@ export default function App() {
               variant="secondary"
               size="icon"
               className={cn(
-                "rounded-2xl w-10 h-10 transition-all border",
+                "rounded-2xl w-14 h-14 transition-all border",
                 view === "profile"
                   ? "bg-indigo-500 text-white border-indigo-600 shadow-lg shadow-indigo-200"
                   : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
               )}
               onClick={() => setView(view === "profile" ? "dashboard" : "profile")}
             >
-              <User className="w-5 h-5" />
+              <User className="w-6 h-6" />
             </Button>
           </div>
         </div>
