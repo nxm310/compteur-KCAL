@@ -1571,7 +1571,7 @@ export default function App() {
                       type="text"
                       inputMode="decimal"
                       value={tempKcal === 0 ? '' : tempKcal}
-                      onChange={(e) => { const v = e.target.value; setTempKcal(v === '' ? '' : v); }}
+                      onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempKcal(v === '' ? '' : v); }}
                       onBlur={(e) => { if (e.target.value === '') setTempKcal(0); }}
                       className="h-8 w-20 text-sm font-bold border-orange-200 focus:border-orange-500"
                     />
@@ -1585,15 +1585,15 @@ export default function App() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Dna className="w-3 h-3" /> Protéines</Label>
-                    <Input type="text" inputMode="decimal" value={tempProtein === 0 ? '' : tempProtein} onChange={(e) => { const v = e.target.value; setTempProtein(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }} className="h-10 rounded-xl border-blue-100 focus:border-blue-500" />
+                    <Input type="text" inputMode="decimal" value={tempProtein === 0 ? '' : tempProtein} onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempProtein(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }} className="h-10 rounded-xl border-blue-100 focus:border-blue-500" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1"><Wheat className="w-3 h-3" /> Glucides</Label>
-                    <Input type="text" inputMode="decimal" value={tempCarbs === 0 ? '' : tempCarbs} onChange={(e) => { const v = e.target.value; setTempCarbs(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }} className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500" />
+                    <Input type="text" inputMode="decimal" value={tempCarbs === 0 ? '' : tempCarbs} onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempCarbs(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }} className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Droplets className="w-3 h-3" /> Lipides</Label>
-                    <Input type="text" inputMode="decimal" value={tempFat === 0 ? '' : tempFat} onChange={(e) => { const v = e.target.value; setTempFat(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempFat(0); }} className="h-10 rounded-xl border-red-100 focus:border-red-500" />
+                    <Input type="text" inputMode="decimal" value={tempFat === 0 ? '' : tempFat} onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempFat(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempFat(0); }} className="h-10 rounded-xl border-red-100 focus:border-red-500" />
                   </div>
                 </div>
               </div>
@@ -1607,7 +1607,7 @@ export default function App() {
                       type="text"
                       inputMode="decimal"
                       value={tempQuantity === '' ? '' : tempQuantity}
-                      onChange={(e) => { const v = e.target.value; setTempQuantity(v === '' ? '' : v); }}
+                      onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempQuantity(v === '' ? '' : v); }}
                       onBlur={(e) => { if (e.target.value === '') setTempQuantity(100); }}
                       className="rounded-2xl h-12 text-lg font-bold pr-8 border-slate-200 focus:border-orange-500"
                     />
