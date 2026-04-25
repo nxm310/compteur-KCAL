@@ -80,6 +80,7 @@ interface MealState {
   title: string;
   icon: any;
   color: string;
+  bg?: string;
   products: LoggedProduct[];
 }
 
@@ -1616,7 +1617,7 @@ export default function App() {
                       </p>
                       <span className={cn(
                         "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase flex-shrink-0",
-                        product.source === 'USDA' ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
+                        "bg-blue-100 text-blue-600"
                       )}>
                         {product.source}
                       </span>
