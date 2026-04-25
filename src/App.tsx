@@ -1010,30 +1010,15 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
             >
-              <Card className="bg-[#007AFF] border-none shadow-xl rounded-[2rem] overflow-hidden">
-                <CardContent className="p-6 text-white">
-                  <div className="text-center mb-4">
-                    <p className="text-xs font-bold bg-white/10 py-1 px-3 rounded-full inline-block">
-                      Une Barre Mars et hop 250 Kcal 😉
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="bg-white/20 p-2 rounded-xl">
-                      <Footprints className="w-6 h-6 text-white" />
-                    </div>
-                    <h3 className="text-2xl font-bold">Activités</h3>
-                  </div>
-                  <p className="text-lg font-bold opacity-90 mb-6">
-                    Calories Actives: <span className="text-2xl">{totalBurned.toFixed(0)}</span> kcal
-                  </p>
-                  <Button
-                    className="w-full bg-white text-[#007AFF] hover:bg-slate-100 rounded-2xl h-14 font-black text-xl shadow-md"
-                    onClick={() => setIsActivityModalOpen(true)}
-                  >
-                    Ajouter un exercice
-                  </Button>
-                </CardContent>
-              </Card>
+              <button
+                className="w-full bg-[#007AFF] hover:bg-blue-600 active:bg-blue-700 text-white rounded-[2rem] h-14 font-black text-lg shadow-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                onClick={() => setIsActivityModalOpen(true)}
+              >
+                <div className="bg-white/20 p-1.5 rounded-xl">
+                  <Footprints className="w-5 h-5 text-white" />
+                </div>
+                Ajouter un exercice
+              </button>
             </motion.div>
           </motion.main>
         ) : (
