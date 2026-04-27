@@ -1,0 +1,26 @@
+{
+  "name": "CaloTrack",
+  "short_name": "CaloTrack",
+  "description": "Suivi de calories et nutrition quotidienne",
+  "start_url": "/compteur-KCAL/",
+  "scope": "/compteur-KCAL/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#f97316",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/compteur-KCAL/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/compteur-KCAL/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
