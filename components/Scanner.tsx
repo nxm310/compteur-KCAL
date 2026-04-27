@@ -29,20 +29,24 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const isProcessingRef = useRef(false);
+  const focusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [manualCode, setManualCode] = useState("");
   const [showManual, setShowManual] = useState(false);
   const [scannerReady, setScannerReady] = useState(false);
 
-  // Arrêt complet et immédiat de la caméra — méthode la plus agressive possible
   const stopScanner = useCallback(() => {
-    // 1. Stopper ZXing
+    // Arrêt de l'intervalle autofocus Android
+    if (focusIntervalRef.current) {
+      clearInterval(focusIntervalRef.current);
+      focusIntervalRef.current = null;
+    }
+
     if (controlsRef.current) {
       try { controlsRef.current.stop(); } catch (_) {}
       controlsRef.current = null;
     }
 
-    // 2. Stopper tous les tracks du stream (éteint l'indicateur caméra iOS)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         track.stop();
@@ -50,13 +54,11 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
       streamRef.current = null;
     }
 
-    // 3. Détacher le stream de la vidéo
     if (videoRef.current) {
       const video = videoRef.current;
-      // Détacher d'abord le srcObject pour que le navigateur libère la caméra
       if (video.srcObject) {
         const s = video.srcObject as MediaStream;
-        s.getTracks().forEach(t => t.stop()); // double sécurité
+        s.getTracks().forEach(t => t.stop());
         video.srcObject = null;
       }
       video.pause();
@@ -64,7 +66,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
       try { video.load(); } catch (_) {}
     }
 
-    // 4. Reset reader
     if (readerRef.current) {
       try { (readerRef.current as any).reset(); } catch (_) {}
       readerRef.current = null;
@@ -74,17 +75,50 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
     isProcessingRef.current = false;
   }, []);
 
-  // Exposé au parent pour arrêt immédiat sans attendre React
   useImperativeHandle(ref, () => ({ stopCamera: stopScanner }), [stopScanner]);
 
-  // Arrêt immédiat dès que isOpen passe à false — sans délai
   useEffect(() => {
     if (!isOpen) {
       stopScanner();
     }
   }, [isOpen, stopScanner]);
 
-  // Démarrage caméra
+  // Force l'autofocus continu sur Android
+  const startAndroidAutofocus = useCallback((stream: MediaStream) => {
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    const capabilities = videoTrack.getCapabilities?.() as any;
+    if (!capabilities) return;
+
+    // Applique focusMode continu si disponible
+    if (capabilities.focusMode?.includes('continuous')) {
+      videoTrack.applyConstraints?.({
+        advanced: [{ focusMode: 'continuous' } as any]
+      }).catch(() => {});
+    }
+
+    // Fallback : déclenche manuellement un autofocus toutes les 2s
+    // (utile sur les appareils qui ne maintiennent pas le focus)
+    focusIntervalRef.current = setInterval(() => {
+      if (!videoTrack || videoTrack.readyState !== 'live') return;
+      const caps = videoTrack.getCapabilities?.() as any;
+      if (caps?.focusMode?.includes('single-shot')) {
+        videoTrack.applyConstraints?.({
+          advanced: [{ focusMode: 'single-shot' } as any]
+        })
+        .then(() => {
+          setTimeout(() => {
+            videoTrack.applyConstraints?.({
+              advanced: [{ focusMode: 'continuous' } as any]
+            }).catch(() => {});
+          }, 500);
+        })
+        .catch(() => {});
+      }
+    }, 2000);
+  }, []);
+
   useEffect(() => {
     if (!isOpen || showManual) return;
 
@@ -104,17 +138,21 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
           delayBetweenScanAttempts: 100,
         });
 
+        // Contraintes optimisées pour Android — autofocus + haute résolution
         const constraints: MediaStreamConstraints = {
           video: {
             facingMode: { ideal: 'environment' },
-            width: { min: 640, ideal: 1280 },
-            height: { min: 480, ideal: 720 },
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 },
+            // @ts-ignore — focusMode est supporté sur Android Chrome
+            focusMode: { ideal: 'continuous' },
+            // @ts-ignore
+            zoom: { ideal: 1 },
           },
         };
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-        // Si fermé pendant l'attente getUserMedia → libérer immédiatement
         if (cancelled) {
           stream.getTracks().forEach(t => t.stop());
           return;
@@ -122,6 +160,9 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
 
         streamRef.current = stream;
         readerRef.current = reader;
+
+        // Démarre l'autofocus Android
+        startAndroidAutofocus(stream);
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -162,7 +203,7 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
       cancelled = true;
       stopScanner();
     };
-  }, [isOpen, showManual, onScanSuccess, onScanError, stopScanner]);
+  }, [isOpen, showManual, onScanSuccess, onScanError, stopScanner, startAndroidAutofocus]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
