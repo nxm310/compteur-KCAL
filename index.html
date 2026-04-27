@@ -1,15 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CaloTrack</title>
-    <!-- Pré-établit les connexions TCP+TLS dès le chargement de la page -->
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/compteur-KCAL/manifest.json" />
+
+    <!-- iOS PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="CaloTrack" />
+    <link rel="apple-touch-icon" href="/compteur-KCAL/icon-192.png" />
+
+    <!-- Android / Chrome -->
+    <meta name="theme-color" content="#f97316" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Pré-établit les connexions TCP+TLS -->
     <link rel="preconnect" href="https://fr.openfoodfacts.org" />
-    <link rel="preconnect" href="https://world.openfoodfacts.org" />
-    <link rel="preconnect" href="https://api.nal.usda.gov" />
     <link rel="dns-prefetch" href="https://fr.openfoodfacts.org" />
-    <link rel="dns-prefetch" href="https://world.openfoodfacts.org" />
   </head>
   <body>
     <div id="root"></div>
