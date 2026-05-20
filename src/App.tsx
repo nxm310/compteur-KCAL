@@ -278,10 +278,35 @@ export default function App() {
   };
 
   // ─── Favorites & History search ──────────────────────────────────────────
-  const [favorites, setFavorites] = useState<string[]>(() => {
+  const [favorites, setFavorites] = useState<LoggedProduct[]>(() => {
     try {
       const saved = localStorage.getItem("calo_favorites_v2");
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        let historyList: LoggedProduct[] = [];
+        try {
+          const savedHistory = localStorage.getItem("calo_history_v2");
+          if (savedHistory) historyList = JSON.parse(savedHistory);
+        } catch {}
+        
+        return parsed.map(item => {
+          if (typeof item === "string") {
+            const histProduct = historyList.find(hp => hp.name === item);
+            return histProduct || {
+              id: Math.random().toString(36).substr(2, 9),
+              name: item,
+              kcalPer100g: 0,
+              proteinPer100g: 0,
+              carbsPer100g: 0,
+              fatPer100g: 0,
+              quantityGrams: 100,
+            };
+          }
+          return item;
+        });
+      }
+      return [];
     } catch { return []; }
   });
 
@@ -292,12 +317,15 @@ export default function App() {
     localStorage.setItem("calo_favorites_v2", JSON.stringify(favorites));
   }, [favorites]);
 
-  const toggleFavorite = useCallback((productName: string) => {
-    setFavorites(prev =>
-      prev.includes(productName)
-        ? prev.filter(n => n !== productName)
-        : [...prev, productName]
-    );
+  const toggleFavorite = useCallback((product: LoggedProduct) => {
+    setFavorites(prev => {
+      const exists = prev.some(p => p.name === product.name);
+      if (exists) {
+        return prev.filter(p => p.name !== product.name);
+      } else {
+        return [...prev, product];
+      }
+    });
   }, []);
 
   // ─── Scanner & UI state ───────────────────────────────────────────────────
@@ -321,6 +349,36 @@ export default function App() {
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [tempWeightInput, setTempWeightInput] = useState<number | string>("");
   const [tempWeightDate, setTempWeightDate] = useState(format(new Date(), "yyyy-MM-dd"));
+
+  const [startWeightInput, setStartWeightInput] = useState(() => String(profile.startWeight));
+  useEffect(() => {
+    const parsed = parseFloat(startWeightInput);
+    if (!isNaN(parsed) && parsed !== profile.startWeight) {
+      setStartWeightInput(String(profile.startWeight));
+    } else if (isNaN(parsed) && startWeightInput !== "") {
+      setStartWeightInput(String(profile.startWeight));
+    }
+  }, [profile.startWeight]);
+
+  const [currentWeightInput, setCurrentWeightInput] = useState(() => String(profile.currentWeight));
+  useEffect(() => {
+    const parsed = parseFloat(currentWeightInput);
+    if (!isNaN(parsed) && parsed !== profile.currentWeight) {
+      setCurrentWeightInput(String(profile.currentWeight));
+    } else if (isNaN(parsed) && currentWeightInput !== "") {
+      setCurrentWeightInput(String(profile.currentWeight));
+    }
+  }, [profile.currentWeight]);
+
+  const [goalWeightInput, setGoalWeightInput] = useState(() => String(profile.goalWeight));
+  useEffect(() => {
+    const parsed = parseFloat(goalWeightInput);
+    if (!isNaN(parsed) && parsed !== profile.goalWeight) {
+      setGoalWeightInput(String(profile.goalWeight));
+    } else if (isNaN(parsed) && goalWeightInput !== "") {
+      setGoalWeightInput(String(profile.goalWeight));
+    }
+  }, [profile.goalWeight]);
 
   // Historique du poids : { date: string, weight: number }[]
   const [weightHistory, setWeightHistory] = useState<{ date: string; weight: number }[]>(() => {
@@ -401,7 +459,7 @@ export default function App() {
   // ─── Filtered history ─────────────────────────────────────────────────────
   const filteredHistory = useMemo(() => {
     let items = historyTab === "favorites"
-      ? productHistory.filter(p => favorites.includes(p.name))
+      ? favorites
       : productHistory;
     if (historySearch.trim()) {
       const q = historySearch.toLowerCase();
@@ -528,7 +586,7 @@ export default function App() {
       setMeals(updatedMeals);
       setProductHistory(prev => {
         const filtered = prev.filter(p => p.name !== newProduct.name);
-        return [newProduct, ...filtered].slice(0, 50);
+        return [newProduct, ...filtered].slice(0, 200);
       });
       setIsProductModalOpen(false);
       setScannedProduct(null);
@@ -549,7 +607,7 @@ export default function App() {
       };
       setProductHistory(prev => {
         const filtered = prev.filter(p => p.name !== newProduct.name);
-        return [newProduct, ...filtered].slice(0, 50);
+        return [newProduct, ...filtered].slice(0, 200);
       });
       setIsProductModalOpen(false);
       setScannedProduct(null);
@@ -690,7 +748,7 @@ export default function App() {
     showMealButtons?: boolean;
     mealIdx?: number;
   }) => {
-    const isFav = favorites.includes(product.name);
+    const isFav = favorites.some(p => p.name === product.name);
     return (
       <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-100 group">
         {/* Clickable main area */}
@@ -735,7 +793,7 @@ export default function App() {
         )}
         {/* Star */}
         <button
-          onClick={() => toggleFavorite(product.name)}
+          onClick={() => toggleFavorite(product)}
           className="p-1.5 rounded-xl hover:bg-yellow-50 transition-colors flex-shrink-0"
         >
           <Star
@@ -1114,23 +1172,77 @@ export default function App() {
                       onChange={(e) => setProfile({...profile, height: Number(e.target.value)})}
                       className="rounded-xl" />
                   </div>
-                  <div className="space-y-2">
+                   <div className="space-y-2">
                     <Label className="text-xs text-slate-500">Poids de départ (kg)</Label>
-                    <Input type="number" value={profile.startWeight}
-                      onChange={(e) => setProfile({...profile, startWeight: Number(e.target.value)})}
-                      className="rounded-xl" />
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={startWeightInput}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(',', '.');
+                        if (/^\d*\.?\d*$/.test(raw)) {
+                          setStartWeightInput(raw);
+                          const parsed = parseFloat(raw);
+                          if (!isNaN(parsed) && parsed > 0) {
+                            setProfile(prev => ({ ...prev, startWeight: parsed }));
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        if (startWeightInput === "" || isNaN(parseFloat(startWeightInput))) {
+                          setStartWeightInput(String(profile.startWeight));
+                        }
+                      }}
+                      className="rounded-xl"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs text-slate-500">Poids actuel (kg)</Label>
-                    <Input type="number" value={profile.currentWeight}
-                      onChange={(e) => setProfile({...profile, currentWeight: Number(e.target.value)})}
-                      className="rounded-xl" />
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={currentWeightInput}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(',', '.');
+                        if (/^\d*\.?\d*$/.test(raw)) {
+                          setCurrentWeightInput(raw);
+                          const parsed = parseFloat(raw);
+                          if (!isNaN(parsed) && parsed > 0) {
+                            logWeight(parsed);
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        if (currentWeightInput === "" || isNaN(parseFloat(currentWeightInput))) {
+                          setCurrentWeightInput(String(profile.currentWeight));
+                        }
+                      }}
+                      className="rounded-xl"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs text-slate-500">Poids objectif (kg)</Label>
-                    <Input type="number" value={profile.goalWeight}
-                      onChange={(e) => setProfile({...profile, goalWeight: Number(e.target.value)})}
-                      className="rounded-xl" />
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={goalWeightInput}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(',', '.');
+                        if (/^\d*\.?\d*$/.test(raw)) {
+                          setGoalWeightInput(raw);
+                          const parsed = parseFloat(raw);
+                          if (!isNaN(parsed) && parsed > 0) {
+                            setProfile(prev => ({ ...prev, goalWeight: parsed }));
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        if (goalWeightInput === "" || isNaN(parseFloat(goalWeightInput))) {
+                          setGoalWeightInput(String(profile.goalWeight));
+                        }
+                      }}
+                      className="rounded-xl"
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1479,7 +1591,7 @@ export default function App() {
                 )}
               >
                 <Star className={cn("w-3.5 h-3.5", historyTab === "favorites" ? "fill-white" : "")} />
-                Favoris ({productHistory.filter(p => favorites.includes(p.name)).length})
+                Favoris ({favorites.length})
               </button>
             </div>
           </div>
@@ -1716,13 +1828,25 @@ export default function App() {
               <span>Détails du produit</span>
               {scannedProduct && (
                 <button
-                  onClick={() => toggleFavorite(tempName || scannedProduct.name)}
+                  onClick={() => {
+                    const productToFav: LoggedProduct = {
+                      id: scannedProduct.id || Math.random().toString(36).substr(2, 9),
+                      name: tempName || scannedProduct.name || "Produit inconnu",
+                      kcalPer100g: Number(tempKcal) || 0,
+                      proteinPer100g: Number(tempProtein) || 0,
+                      carbsPer100g: Number(tempCarbs) || 0,
+                      fatPer100g: Number(tempFat) || 0,
+                      quantityGrams: Number(tempQuantity) || 100,
+                      imageUrl: scannedProduct.imageUrl
+                    };
+                    toggleFavorite(productToFav);
+                  }}
                   className="p-1.5 rounded-xl hover:bg-yellow-50 transition-colors"
                 >
                   <Star
                     className={cn(
                       "w-5 h-5 transition-colors",
-                      favorites.includes(tempName || scannedProduct.name)
+                      favorites.some(p => p.name === (tempName || scannedProduct.name))
                         ? "fill-yellow-400 text-yellow-400"
                         : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
                     )}
@@ -1990,14 +2114,14 @@ export default function App() {
                       )}
                     >
                       <Star className={cn("w-3.5 h-3.5", mealHistoryTab === "favorites" ? "fill-white" : "")} />
-                      Favoris ({productHistory.filter(p => favorites.includes(p.name)).length})
+                      Favoris ({favorites.length})
                     </button>
                   </div>
 
                   {/* Liste filtrée */}
                   {(() => {
                     let items = mealHistoryTab === "favorites"
-                      ? productHistory.filter(p => favorites.includes(p.name))
+                      ? favorites
                       : productHistory;
                     if (mealHistorySearch.trim()) {
                       const q = mealHistorySearch.toLowerCase();
