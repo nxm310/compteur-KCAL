@@ -2,6 +2,9 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import "dotenv/config";
+import { GoogleGenAI } from "@google/genai";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,7 +13,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
 
   // API Proxy for Open Food Facts search
   app.get("/api/food/search/:query", async (req, res) => {
@@ -93,6 +96,69 @@ async function startServer() {
     } catch (error) {
       console.error("USDA proxy error:", error);
       res.status(500).json({ foods: [] });
+    }
+  });
+
+  // API for Gemini AI Multimodal Food Analysis
+  app.post("/api/food/analyze-image", async (req, res) => {
+    const { image } = req.body;
+    if (!image) {
+      return res.status(400).json({ error: "Aucune donnée d'image reçue." });
+    }
+
+    const customApiKey = req.headers["x-gemini-api-key"];
+    const apiKey = typeof customApiKey === "string" && customApiKey.trim()
+      ? customApiKey.trim()
+      : process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(400).json({ error: "Clé API Gemini manquante. Veuillez en configurer une dans les paramètres de l'application." });
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64Data
+            }
+          },
+          "Analyze this food image. Identify the food item and estimate its nutritional values. " +
+          "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
+          "The JSON keys MUST be exactly: " +
+          "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
+          "'estimatedWeight' (number, the estimated portion weight in grams), " +
+          "'kcalPer100g' (number, estimated calories per 100g of this item), " +
+          "'proteinPer100g' (number, estimated proteins in grams per 100g), " +
+          "'carbsPer100g' (number, estimated carbohydrates in grams per 100g), " +
+          "'fatPer100g' (number, estimated fats/lipids in grams per 100g)."
+        ],
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("L'API Gemini a retourné une réponse vide.");
+      }
+
+      // Cleanup markdown if Gemini wrapped it anyway
+      let cleanJson = text.trim();
+      if (cleanJson.startsWith("```")) {
+        cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+      }
+
+      const result = JSON.parse(cleanJson);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Gemini Image Analysis Error:", error);
+      res.status(500).json({ error: error.message || "Erreur lors de l'analyse de l'image." });
     }
   });
 

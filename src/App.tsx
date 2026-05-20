@@ -47,6 +47,8 @@ import {
   UserCheck,
   Search,
   Star,
+  Sparkles,
+  AlertCircle,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -187,7 +189,7 @@ const ICON_MAP: Record<string, any> = {
   Croissant
 };
 
-const INITIAL_MEALS = [
+const INITIAL_MEALS: MealState[] = [
   { title: "Petit-déj", icon: "Croissant", color: "text-orange-500", bg: "bg-orange-50", products: [] },
   { title: "Déjeuner", icon: "Sun", color: "text-yellow-500", bg: "bg-yellow-50", products: [] },
   { title: "Dîner", icon: "Moon", color: "text-indigo-500", bg: "bg-indigo-50", products: [] },
@@ -347,6 +349,26 @@ export default function App() {
   }, [isHistoryOpen]);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+
+  // --- Gemini AI states ---
+  const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
+  const [geminiImage, setGeminiImage] = useState<string | null>(null);
+  const [isGeminiLoading, setIsGeminiLoading] = useState(false);
+  const [geminiError, setGeminiError] = useState<string | null>(null);
+  const [geminiSelectedMealIndex, setGeminiSelectedMealIndex] = useState<number>(1);
+  const [geminiName, setGeminiName] = useState("");
+  const [geminiWeight, setGeminiWeight] = useState<string | number>("");
+  const [geminiKcal, setGeminiKcal] = useState<string | number>("");
+  const [geminiProtein, setGeminiProtein] = useState<string | number>("");
+  const [geminiCarbs, setGeminiCarbs] = useState<string | number>("");
+  const [geminiFat, setGeminiFat] = useState<string | number>("");
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("calo_gemini_api_key") || "");
+  const [tempModalApiKey, setTempModalApiKey] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("calo_gemini_api_key", geminiApiKey);
+  }, [geminiApiKey]);
+
   const [tempWeightInput, setTempWeightInput] = useState<number | string>("");
   const [tempWeightDate, setTempWeightDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
@@ -400,6 +422,123 @@ export default function App() {
     });
     // Met à jour le poids actuel uniquement (startWeight reste intact)
     setProfile(prev => ({ ...prev, currentWeight: w }));
+  };
+
+  const handleGeminiAnalyze = async (base64Image: string) => {
+    setIsGeminiLoading(true);
+    setGeminiError(null);
+    try {
+      const response = await fetch("/api/food/analyze-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(geminiApiKey ? { "x-gemini-api-key": geminiApiKey } : {})
+        },
+        body: JSON.stringify({ image: base64Image })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de l'analyse de l'image.");
+      }
+      
+      setGeminiName(data.name || "Aliment détecté");
+      setGeminiWeight(data.estimatedWeight || 150);
+      setGeminiKcal(data.kcalPer100g || 0);
+      setGeminiProtein(data.proteinPer100g || 0);
+      setGeminiCarbs(data.carbsPer100g || 0);
+      setGeminiFat(data.fatPer100g || 0);
+    } catch (error: any) {
+      console.error(error);
+      setGeminiError(error.message || "Une erreur est survenue lors de l'analyse de l'image.");
+    } finally {
+      setIsGeminiLoading(false);
+    }
+  };
+
+  const handleResetGemini = () => {
+    setGeminiImage(null);
+    setGeminiName("");
+    setGeminiWeight("");
+    setGeminiKcal("");
+    setGeminiProtein("");
+    setGeminiCarbs("");
+    setGeminiFat("");
+    setGeminiError(null);
+    setIsGeminiLoading(false);
+  };
+
+  const handleGeminiFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      setGeminiImage(base64);
+      handleGeminiAnalyze(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+
+  const handleGeminiSave = () => {
+    const w = parseFloat(String(geminiWeight));
+    const k = parseFloat(String(geminiKcal));
+    const p = parseFloat(String(geminiProtein));
+    const c = parseFloat(String(geminiCarbs));
+    const f = parseFloat(String(geminiFat));
+
+    if (!geminiName.trim() || isNaN(w) || w <= 0 || isNaN(k)) {
+      return;
+    }
+
+    const newProduct: LoggedProduct = {
+      id: Math.random().toString(36).substring(2, 9),
+      name: geminiName,
+      kcalPer100g: k,
+      proteinPer100g: isNaN(p) ? 0 : p,
+      carbsPer100g: isNaN(c) ? 0 : c,
+      fatPer100g: isNaN(f) ? 0 : f,
+      quantityGrams: w
+    };
+
+    // Add to selected meal
+    setMealsByDate(prev => {
+      const currentMeals = prev[dateKey] ? [...prev[dateKey]] : [
+        { title: "Petit-déj", icon: "Croissant", color: "text-orange-500", bg: "bg-orange-50", products: [] },
+        { title: "Déjeuner", icon: "Sun", color: "text-yellow-500", bg: "bg-yellow-50", products: [] },
+        { title: "Dîner", icon: "Moon", color: "text-indigo-500", bg: "bg-indigo-50", products: [] },
+        { title: "En-cas", icon: "Apple", color: "text-red-500", bg: "bg-red-50", products: [] }
+      ];
+
+      const targetMeal = { ...currentMeals[geminiSelectedMealIndex] };
+      targetMeal.products = [newProduct, ...targetMeal.products];
+      
+      const newMeals = [...currentMeals];
+      newMeals[geminiSelectedMealIndex] = targetMeal;
+
+      return {
+        ...prev,
+        [dateKey]: newMeals
+      };
+    });
+
+    // Also add to product history for easy logging in future
+    setProductHistory(prev => {
+      const filtered = prev.filter(item => item.name !== newProduct.name);
+      return [newProduct, ...filtered].slice(0, 200);
+    });
+
+    // Reset state & close modal
+    setIsGeminiModalOpen(false);
+    setGeminiImage(null);
+    setGeminiName("");
+    setGeminiWeight("");
+    setGeminiKcal("");
+    setGeminiProtein("");
+    setGeminiCarbs("");
+    setGeminiFat("");
+    setGeminiError(null);
   };
   const [tempActivityName, setTempActivityName] = useState("");
   const [tempActivityKcal, setTempActivityKcal] = useState(0);
@@ -1126,6 +1265,26 @@ export default function App() {
                 </div>
               </button>
             </motion.div>
+
+            {/* Gemini AI Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.65 }}
+            >
+              <button
+                onClick={() => {
+                  setTempModalApiKey(geminiApiKey);
+                  setIsGeminiModalOpen(true);
+                }}
+                className="w-full h-16 bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-violet-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              >
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-violet-100" />
+                </div>
+                Estimer via Gemini AI
+              </button>
+            </motion.div>
           </motion.main>
         ) : (
           <motion.main
@@ -1504,6 +1663,66 @@ export default function App() {
                 <Save className="w-5 h-5 mr-2" />
                 Enregistrer & Retour
               </Button>
+            </Card>
+
+            {/* ─── Gemini AI Settings Card ─────────────────────────────────────────── */}
+            <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-violet-500 animate-pulse" />
+                Configuration de l'IA Gemini
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Par défaut, l'application utilise la clé API du serveur. Si vous le souhaitez, vous pouvez renseigner votre propre clé API Gemini personnelle. Elle sera enregistrée localement dans votre navigateur de manière sécurisée.
+              </p>
+              <div className="bg-violet-50/50 rounded-2xl p-3 border border-violet-100 flex items-start gap-2.5">
+                <Zap className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-extrabold text-violet-700">Obtenir une clé API gratuite</p>
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    Vous pouvez créer votre clé API en quelques secondes sur la console Google AI Studio :
+                  </p>
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-[10px] font-bold text-violet-600 hover:underline inline-flex items-center gap-1 mt-1"
+                  >
+                    Créer ma clé API Gemini →
+                  </a>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-slate-500">Votre clé API Gemini</Label>
+                  {geminiApiKey ? (
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                      Clé perso active
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                      Clé serveur par défaut
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Input
+                    type="password"
+                    placeholder="AIzaSy..."
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value.trim())}
+                    className="rounded-xl pr-10 font-mono text-sm border-slate-200 focus-visible:ring-violet-500"
+                  />
+                  {geminiApiKey && (
+                    <button
+                      onClick={() => setGeminiApiKey("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                      type="button"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </Card>
 
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
@@ -2304,6 +2523,314 @@ export default function App() {
               Enregistrer l'activité
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Gemini AI Modal ─────────────────────────────────────────────────── */}
+      <Dialog open={isGeminiModalOpen} onOpenChange={(open) => {
+        setIsGeminiModalOpen(open);
+        if (!open) {
+          handleResetGemini();
+        }
+      }}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-6 overflow-hidden max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-xl font-black text-slate-800">
+              <Sparkles className="w-5 h-5 text-violet-600 animate-pulse" />
+              Estimation de repas par IA
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Déterminez instantanément les calories de vos plats grâce à l'intelligence artificielle.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-1 py-4 -mr-1">
+            {!geminiApiKey ? (
+              <div className="space-y-5 py-2">
+                <div className="bg-amber-50/60 border border-amber-100 rounded-3xl p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-amber-800 text-sm">Clé API requise</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Pour utiliser l'estimation par Intelligence Artificielle, vous devez renseigner votre clé API Gemini personnelle.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-violet-50/50 rounded-2xl p-4 border border-violet-100 flex items-start gap-3">
+                  <Zap className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-violet-700">Comment obtenir une clé gratuite ?</p>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Créez une clé d'API gratuite en quelques secondes sur la console officielle de Google AI Studio :
+                    </p>
+                    <a 
+                      href="https://aistudio.google.com/app/apikey" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-[10px] font-bold text-violet-600 hover:underline inline-flex items-center gap-1 mt-1.5"
+                    >
+                      Créer ma clé API Gemini →
+                    </a>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-500">Collez votre clé API Gemini</Label>
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      placeholder="AIzaSy..."
+                      value={tempModalApiKey}
+                      onChange={(e) => setTempModalApiKey(e.target.value.trim())}
+                      className="rounded-xl pr-10 font-mono text-sm border-slate-200 focus-visible:ring-violet-500 h-11"
+                    />
+                    {tempModalApiKey && (
+                      <button
+                        onClick={() => setTempModalApiKey("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                        type="button"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={() => {
+                    if (tempModalApiKey.trim()) {
+                      setGeminiApiKey(tempModalApiKey.trim());
+                    }
+                  }}
+                  disabled={!tempModalApiKey.trim()}
+                  className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-2xl h-12 mt-2 transition-all"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Enregistrer la clé et continuer
+                </Button>
+              </div>
+            ) : (
+              <>
+                {!geminiImage && !isGeminiLoading && !geminiError && (
+              <div 
+                onClick={() => document.getElementById('gemini-image-input')?.click()}
+                className="relative group overflow-hidden border-2 border-dashed border-violet-200 hover:border-violet-400 bg-gradient-to-br from-violet-50/40 to-indigo-50/30 hover:from-violet-50/80 hover:to-indigo-50/60 transition-all duration-300 rounded-[2rem] p-10 text-center cursor-pointer flex flex-col items-center justify-center gap-4 shadow-sm"
+              >
+                <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-violet-100/80 text-violet-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
+                  <Sparkles className="w-8 h-8 animate-pulse" />
+                  <div className="absolute inset-0 rounded-2xl border border-violet-300 opacity-0 group-hover:opacity-100 transition-opacity duration-300 scale-105" />
+                </div>
+                <div className="space-y-1">
+                  <span className="block font-black text-slate-700 text-base group-hover:text-violet-700 transition-colors">
+                    Prendre une photo ou importer
+                  </span>
+                  <span className="block text-xs font-medium text-slate-400 max-w-[240px] mx-auto leading-relaxed">
+                    Prenez une photo de votre plat en direct ou choisissez une image depuis votre galerie
+                  </span>
+                </div>
+                <input 
+                  type="file" 
+                  id="gemini-image-input" 
+                  accept="image/*" 
+                  capture="environment" 
+                  className="hidden" 
+                  onChange={handleGeminiFileChange}
+                />
+              </div>
+            )}
+
+            {isGeminiLoading && (
+              <div className="flex flex-col items-center justify-center py-10 px-4 space-y-6">
+                <div className="relative w-28 h-28 flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-full bg-violet-500/10 animate-ping duration-1000" />
+                  <div className="absolute inset-2 rounded-full bg-indigo-500/10 animate-pulse duration-700" />
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-violet-200 relative z-10">
+                    <Sparkles className="w-8 h-8 animate-spin" style={{ animationDuration: '3s' }} />
+                  </div>
+                </div>
+                <div className="space-y-2 text-center max-w-xs">
+                  <h4 className="font-extrabold text-slate-700 text-lg">Gemini analyse votre assiette...</h4>
+                  <p className="text-xs text-slate-400 animate-pulse">
+                    Identification de la nourriture et estimation des macronutriments en cours.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {geminiError && (
+              <div className="bg-red-50 border-2 border-red-100 rounded-3xl p-6 text-center space-y-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mx-auto">
+                  <X className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-red-800">Une erreur est survenue</h4>
+                  <p className="text-xs text-red-600/90">{geminiError}</p>
+                </div>
+                <Button 
+                  onClick={handleResetGemini}
+                  className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-6 h-10 font-bold text-sm shadow-md shadow-red-100 w-full"
+                >
+                  Réessayer
+                </Button>
+              </div>
+            )}
+
+            {geminiImage && !isGeminiLoading && !geminiError && (
+              <div className="space-y-6">
+                {/* Visual row */}
+                <div className="flex items-center gap-4 bg-slate-50/50 p-3 rounded-2xl border border-slate-100">
+                  <img 
+                    src={geminiImage} 
+                    alt="Repas" 
+                    className="w-16 h-16 rounded-xl object-cover border-2 border-white shadow-md shadow-slate-200 flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <Label className="text-[10px] font-bold text-violet-500 uppercase tracking-wider block mb-0.5">Aliment estimé</Label>
+                    <Input 
+                      value={geminiName}
+                      onChange={(e) => setGeminiName(e.target.value)}
+                      placeholder="Nom de l'aliment"
+                      className="h-9 border-none bg-transparent font-extrabold text-slate-800 text-base p-0 focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none shadow-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Grid inputs for portion & general calories */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-500">Portion (g)</Label>
+                    <Input 
+                      type="text"
+                      inputMode="decimal"
+                      value={geminiWeight}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(',', '.');
+                        setGeminiWeight(val);
+                      }}
+                      placeholder="150"
+                      className="rounded-xl h-11 border-slate-200 focus-visible:ring-violet-500 font-extrabold text-slate-700"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-500">Calories (kcal/100g)</Label>
+                    <Input 
+                      type="text"
+                      inputMode="decimal"
+                      value={geminiKcal}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(',', '.');
+                        setGeminiKcal(val);
+                      }}
+                      placeholder="120"
+                      className="rounded-xl h-11 border-slate-200 focus-visible:ring-violet-500 font-extrabold text-slate-700"
+                    />
+                  </div>
+                </div>
+
+                {/* Macronutrient breakdown */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-500 block">Macronutriments (pour 100g)</Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-orange-50/30 border border-orange-100 rounded-2xl p-3 text-center space-y-1">
+                      <span className="text-[10px] font-black text-orange-600 uppercase tracking-wider block">Protéines</span>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={geminiProtein}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(',', '.');
+                          setGeminiProtein(val);
+                        }}
+                        placeholder="0"
+                        className="h-8 border-none bg-transparent focus-visible:ring-0 text-center font-extrabold text-slate-800 text-sm p-0 shadow-none"
+                      />
+                    </div>
+                    <div className="bg-yellow-50/30 border border-yellow-100 rounded-2xl p-3 text-center space-y-1">
+                      <span className="text-[10px] font-black text-yellow-600 uppercase tracking-wider block">Glucides</span>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={geminiCarbs}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(',', '.');
+                          setGeminiCarbs(val);
+                        }}
+                        placeholder="0"
+                        className="h-8 border-none bg-transparent focus-visible:ring-0 text-center font-extrabold text-slate-800 text-sm p-0 shadow-none"
+                      />
+                    </div>
+                    <div className="bg-red-50/30 border border-red-100 rounded-2xl p-3 text-center space-y-1">
+                      <span className="text-[10px] font-black text-red-600 uppercase tracking-wider block">Lipides</span>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={geminiFat}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(',', '.');
+                          setGeminiFat(val);
+                        }}
+                        placeholder="0"
+                        className="h-8 border-none bg-transparent focus-visible:ring-0 text-center font-extrabold text-slate-800 text-sm p-0 shadow-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Meal Selector */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-500 block">Intégrer au repas</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { index: 0, title: "Petit-déj", icon: Croissant, color: "text-orange-500", bg: "bg-orange-50", activeBg: "bg-orange-500 text-white border-orange-500" },
+                      { index: 1, title: "Déjeuner", icon: Sun, color: "text-yellow-500", bg: "bg-yellow-50", activeBg: "bg-yellow-500 text-white border-yellow-500" },
+                      { index: 2, title: "Dîner", icon: Moon, color: "text-indigo-500", bg: "bg-indigo-50", activeBg: "bg-indigo-500 text-white border-indigo-500" },
+                      { index: 3, title: "En-cas", icon: Apple, color: "text-red-500", bg: "bg-red-50", activeBg: "bg-red-500 text-white border-red-500" }
+                    ].map((opt) => {
+                      const Icon = opt.icon;
+                      const isSelected = geminiSelectedMealIndex === opt.index;
+                      return (
+                        <button
+                          key={opt.index}
+                          type="button"
+                          onClick={() => setGeminiSelectedMealIndex(opt.index)}
+                          className={`h-11 rounded-2xl text-xs font-extrabold transition-all border-2 flex items-center justify-center gap-2 ${
+                            isSelected
+                              ? opt.activeBg
+                              : `bg-slate-50 border-slate-200/80 hover:border-slate-300 text-slate-500`
+                          }`}
+                        >
+                          <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : opt.color}`} />
+                          {opt.title}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    type="button"
+                    onClick={handleResetGemini}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl h-12 font-bold transition-colors"
+                  >
+                    Recommencer
+                  </Button>
+                  <Button 
+                    type="button"
+                    onClick={handleGeminiSave}
+                    disabled={!geminiName.trim() || isNaN(parseFloat(String(geminiWeight))) || parseFloat(String(geminiWeight)) <= 0}
+                    className="flex-1 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-2xl h-12 font-extrabold shadow-lg shadow-violet-200/70"
+                  >
+                    Valider & Ajouter
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
         </DialogContent>
       </Dialog>
     </div>
