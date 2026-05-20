@@ -428,25 +428,85 @@ export default function App() {
     setIsGeminiLoading(true);
     setGeminiError(null);
     try {
-      const response = await fetch("/api/food/analyze-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(geminiApiKey ? { "x-gemini-api-key": geminiApiKey } : {})
-        },
-        body: JSON.stringify({ image: base64Image })
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Erreur lors de l'analyse de l'image.");
+      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+      let result;
+
+      if (geminiApiKey) {
+        // Direct client-side fetch to official Google Gemini API (fully supports GitHub Pages/Static deployment!)
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: "image/jpeg",
+                      data: base64Data
+                    }
+                  },
+                  {
+                    text: "Analyze this food image. Identify the food item and estimate its nutritional values. " +
+                          "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
+                          "The JSON keys MUST be exactly: " +
+                          "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
+                          "'estimatedWeight' (number, the portion weight in grams), " +
+                          "'kcalPer100g' (number, calories per 100g of this item), " +
+                          "'proteinPer100g' (number, proteins in grams per 100g), " +
+                          "'carbsPer100g' (number, carbohydrates in grams per 100g), " +
+                          "'fatPer100g' (number, fats/lipids in grams per 100g)."
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `Erreur de l'API Gemini (${response.status})`);
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          throw new Error("L'API Gemini a retourné une réponse vide.");
+        }
+
+        let cleanJson = text.trim();
+        if (cleanJson.startsWith("```")) {
+          cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+        }
+        result = JSON.parse(cleanJson);
+      } else {
+        // Fallback to Express backend if no local key (only works if fully-fledged server is deployed)
+        const response = await fetch("/api/food/analyze-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ image: base64Image })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Erreur lors de l'analyse de l'image.");
+        }
+        result = data;
       }
       
-      setGeminiName(data.name || "Aliment détecté");
-      setGeminiWeight(data.estimatedWeight || 150);
-      setGeminiKcal(data.kcalPer100g || 0);
-      setGeminiProtein(data.proteinPer100g || 0);
-      setGeminiCarbs(data.carbsPer100g || 0);
-      setGeminiFat(data.fatPer100g || 0);
+      setGeminiName(result.name || "Aliment détecté");
+      setGeminiWeight(result.estimatedWeight || 150);
+      setGeminiKcal(result.kcalPer100g || 0);
+      setGeminiProtein(result.proteinPer100g || 0);
+      setGeminiCarbs(result.carbsPer100g || 0);
+      setGeminiFat(result.fatPer100g || 0);
     } catch (error: any) {
       console.error(error);
       setGeminiError(error.message || "Une erreur est survenue lors de l'analyse de l'image.");
