@@ -2895,7 +2895,7 @@ export default function App() {
       </Dialog>
 
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
-        <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden">
+        <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden no-scrollbar">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 pr-8">
               <span>Détails du produit</span>
