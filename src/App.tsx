@@ -2817,11 +2817,12 @@ export default function App() {
                   />
                   <div className="flex-1 min-w-0">
                     <Label className="text-[10px] font-bold text-violet-500 uppercase tracking-wider block mb-0.5">Aliment estimé</Label>
-                    <Input 
+                    <textarea 
                       value={geminiName}
                       onChange={(e) => setGeminiName(e.target.value)}
                       placeholder="Nom de l'aliment"
-                      className="h-9 border-none bg-transparent font-extrabold text-slate-800 text-base p-0 focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none shadow-none"
+                      rows={2}
+                      className="w-full resize-none border-none bg-transparent font-extrabold text-slate-800 text-base p-0 focus:outline-none focus:ring-0 rounded-none shadow-none leading-snug h-12"
                     />
                   </div>
                 </div>
