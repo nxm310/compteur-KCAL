@@ -953,6 +953,14 @@ export default function App() {
     setIsRecipeModalOpen(true);
   };
 
+  const deleteRecipe = (recipeName: string) => {
+    const cleanName = recipeName.replace(/^\[Recette\]\s*/, "");
+    if (window.confirm(`Voulez-vous vraiment supprimer la recette "${cleanName}" ?`)) {
+      setProductHistory(prev => prev.filter(p => p.name !== recipeName));
+      setFavorites(prev => prev.filter(p => p.name !== recipeName));
+    }
+  };
+
   // ─── Totals ───────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
     return meals.reduce((acc, meal) => {
@@ -2507,6 +2515,15 @@ export default function App() {
 
                       {/* Actions */}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Supprimer la recette (poubelle) */}
+                        <button
+                          type="button"
+                          onClick={() => deleteRecipe(recipe.name)}
+                          className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 transition-colors border border-red-100"
+                          title="Supprimer la recette"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                         {/* Modifier la recette (crayon) */}
                         <button
                           type="button"
