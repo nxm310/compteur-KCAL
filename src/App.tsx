@@ -749,6 +749,7 @@ export default function App() {
   const [tempProtein, setTempProtein] = useState<number | string>(0);
   const [tempCarbs, setTempCarbs] = useState<number | string>(0);
   const [tempFat, setTempFat] = useState<number | string>(0);
+  const [tempIngredients, setTempIngredients] = useState<{ id: string; name: string; kcalPer100g: number; proteinPer100g: number; carbsPer100g: number; fatPer100g: number; quantity: number; imageUrl?: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<UnifiedProduct[]>([]);
@@ -776,6 +777,7 @@ export default function App() {
       setTempProtein(scannedProduct.proteinsPer100g || 0);
       setTempCarbs(scannedProduct.carbsPer100g || 0);
       setTempFat(scannedProduct.fatPer100g || 0);
+      setTempIngredients((scannedProduct as any).ingredients ? [...(scannedProduct as any).ingredients] : []);
     }
   }, [scannedProduct]);
 
@@ -830,6 +832,59 @@ export default function App() {
 
   const updateIngredientQuantity = (id: string, qty: number) => {
     setRecipeIngredients(prev => prev.map(i => i.id === id ? { ...i, quantity: isNaN(qty) ? 0 : qty } : i));
+  };
+
+  const recalculateMacrosFromIngredients = (ingredientsList: typeof tempIngredients) => {
+    const totalWeight = ingredientsList.reduce((sum, i) => sum + i.quantity, 0);
+    if (totalWeight === 0) {
+      setTempQuantity(100);
+      setTempKcal(0);
+      setTempProtein(0);
+      setTempCarbs(0);
+      setTempFat(0);
+      return;
+    }
+    
+    let totalKcal = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFat = 0;
+
+    ingredientsList.forEach(i => {
+      const factor = i.quantity / 100;
+      totalKcal += (i.kcalPer100g || 0) * factor;
+      totalProtein += (i.proteinPer100g || 0) * factor;
+      totalCarbs += (i.carbsPer100g || 0) * factor;
+      totalFat += (i.fatPer100g || 0) * factor;
+    });
+
+    const kcalPer100g = Math.round((totalKcal / totalWeight) * 100);
+    const proteinPer100g = Number(((totalProtein / totalWeight) * 100).toFixed(1));
+    const carbsPer100g = Number(((totalCarbs / totalWeight) * 100).toFixed(1));
+    const fatPer100g = Number(((totalFat / totalWeight) * 100).toFixed(1));
+
+    setTempQuantity(Math.round(totalWeight));
+    setTempKcal(kcalPer100g);
+    setTempProtein(proteinPer100g);
+    setTempCarbs(carbsPer100g);
+    setTempFat(fatPer100g);
+  };
+
+  const updateTempIngredientQuantity = (id: string, qty: number) => {
+    const safeQty = isNaN(qty) ? 0 : qty;
+    setTempIngredients(prev => {
+      const updated = prev.map(i => i.id === id ? { ...i, quantity: safeQty } : i);
+      recalculateMacrosFromIngredients(updated);
+      return updated;
+    });
+  };
+
+  const removeTempIngredient = (id: string) => {
+    setTempIngredients(prev => {
+      const updated = prev.filter(i => i.id !== id);
+      recalculateMacrosFromIngredients(updated);
+      return updated;
+    });
   };
 
   const handleSaveRecipe = () => {
@@ -1074,7 +1129,7 @@ export default function App() {
         fatPer100g: Number(tempFat) || 0,
         quantityGrams: Number(tempQuantity) || 0,
         imageUrl: scannedProduct.imageUrl,
-        ingredients: (scannedProduct as any).ingredients
+        ingredients: tempIngredients.length > 0 ? tempIngredients : (scannedProduct as any).ingredients
       };
       const updatedMeals = [...meals];
       updatedMeals[activeMealIndex].products.push(newProduct);
@@ -2973,6 +3028,48 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Composition de la recette (Modifiable temporairement) */}
+              {tempIngredients.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-slate-100 bg-pink-50/10 p-3 rounded-2xl border border-pink-100/30">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-pink-700 flex items-center gap-1.5">
+                      <ChefHat className="w-4 h-4 text-pink-600 animate-pulse" />
+                      <span>Composition (Modifiable temporairement)</span>
+                    </Label>
+                    <span className="text-[9px] text-slate-400 font-bold">Ne modifie pas la recette d'origine</span>
+                  </div>
+                  
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {tempIngredients.map((ing) => (
+                      <div key={ing.id} className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-100 shadow-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-700 truncate">{ing.name}</p>
+                          <p className="text-[9px] text-slate-400 font-medium">
+                            {ing.kcalPer100g} kcal/100g
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <Input
+                            type="number"
+                            value={ing.quantity}
+                            onChange={(e) => updateTempIngredientQuantity(ing.id, parseInt(e.target.value))}
+                            className="w-14 h-7 text-center rounded-lg border-slate-200 focus-visible:ring-pink-500 text-[10px] font-black p-1"
+                          />
+                          <span className="text-[10px] text-slate-400 font-medium">g</span>
+                          <button
+                            type="button"
+                            onClick={() => removeTempIngredient(ing.id)}
+                            className="p-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Meal selector */}
               {!isScanningForRecipe && (
