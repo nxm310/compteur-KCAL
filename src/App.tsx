@@ -1046,8 +1046,9 @@ export default function App() {
       fatPer100g: product.fatPer100g,
       imageUrl: product.imageUrl,
       source: 'OFF',
-      servingQuantity: product.quantityGrams || 100
-    });
+      servingQuantity: product.quantityGrams || 100,
+      ingredients: product.ingredients
+    } as any);
     setTempQuantity(product.quantityGrams || 100);
     setActiveMealIndex(mealIdx !== undefined ? mealIdx : null);
     setIsProductModalOpen(true);
@@ -3048,7 +3049,7 @@ export default function App() {
                     >
                       Ajouter à l'historique uniquement
                     </Button>
-                    {(scannedProduct as any).ingredients && (
+                    {((scannedProduct as any).ingredients || (scannedProduct.name && scannedProduct.name.startsWith("[Recette]"))) && (
                       <Button
                         variant="outline"
                         className="w-full border-pink-200 text-pink-600 hover:bg-pink-50 rounded-2xl h-12 font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1"
