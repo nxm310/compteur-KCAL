@@ -2896,7 +2896,7 @@ export default function App() {
 
       {/* ─── Product Details Modal ───────────────────────────────────────────── */}
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[90vh] overflow-y-auto p-6">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between pr-8">
               <span>Détails du produit</span>
@@ -2931,7 +2931,7 @@ export default function App() {
           </DialogHeader>
           {scannedProduct && (
             <div className="space-y-5 py-2">
-              <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+              <div className="flex gap-3 sm:gap-4 items-center bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-slate-100">
                 <div 
                   onClick={() => document.getElementById('product-custom-image-input')?.click()}
                   className="relative w-16 h-16 rounded-xl bg-white p-1 shadow-sm border border-slate-100 flex items-center justify-center overflow-hidden cursor-pointer group flex-shrink-0"
@@ -2993,7 +2993,7 @@ export default function App() {
                         setTempKcal(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempKcal(0); }}
-                      className="h-8 w-20 text-sm font-bold border-orange-200 focus:border-orange-500"
+                      className="h-8 w-16 sm:w-20 text-xs sm:text-sm font-bold border-orange-200 focus:border-orange-500"
                     />
                     <span className="text-xs text-slate-500 font-medium">kcal / 100g</span>
                   </div>
@@ -3002,9 +3002,9 @@ export default function App() {
 
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Valeurs pour 100g</h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Dna className="w-3 h-3" /> Protéines</Label>
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] sm:text-[11px] font-bold text-blue-600 flex items-center gap-0.5 sm:gap-1"><Dna className="w-3.5 h-3.5" /> Protéines</Label>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -3016,11 +3016,11 @@ export default function App() {
                         setTempProtein(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }}
-                      className="h-10 rounded-xl border-blue-100 focus:border-blue-500"
+                      className="h-9 sm:h-10 text-xs sm:text-sm rounded-xl border-blue-100 focus:border-blue-500 px-2"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1"><Wheat className="w-3 h-3" /> Glucides</Label>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] sm:text-[11px] font-bold text-yellow-700 flex items-center gap-0.5 sm:gap-1"><Wheat className="w-3.5 h-3.5" /> Glucides</Label>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -3032,11 +3032,11 @@ export default function App() {
                         setTempCarbs(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }}
-                      className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500"
+                      className="h-9 sm:h-10 text-xs sm:text-sm rounded-xl border-yellow-100 focus:border-yellow-500 px-2"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Droplets className="w-3 h-3" /> Lipides</Label>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] sm:text-[11px] font-bold text-red-600 flex items-center gap-0.5 sm:gap-1"><Droplets className="w-3.5 h-3.5" /> Lipides</Label>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -3048,7 +3048,7 @@ export default function App() {
                         setTempFat(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempFat(0); }}
-                      className="h-10 rounded-xl border-red-100 focus:border-red-500"
+                      className="h-9 sm:h-10 text-xs sm:text-sm rounded-xl border-red-100 focus:border-red-500 px-2"
                     />
                   </div>
                 </div>
