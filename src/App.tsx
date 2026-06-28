@@ -2894,39 +2894,11 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Product Details Modal ───────────────────────────────────────────── */}
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden">
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto px-3 py-5 sm:p-6 overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between pr-8">
               <span>Détails du produit</span>
-              {scannedProduct && (
-                <button
-                  onClick={() => {
-                    const productToFav: LoggedProduct = {
-                      id: scannedProduct.id || Math.random().toString(36).substr(2, 9),
-                      name: tempName || scannedProduct.name || "Produit inconnu",
-                      kcalPer100g: Number(tempKcal) || 0,
-                      proteinPer100g: Number(tempProtein) || 0,
-                      carbsPer100g: Number(tempCarbs) || 0,
-                      fatPer100g: Number(tempFat) || 0,
-                      quantityGrams: Number(tempQuantity) || 100,
-                      imageUrl: scannedProduct.imageUrl
-                    };
-                    toggleFavorite(productToFav);
-                  }}
-                  className="p-1.5 rounded-xl hover:bg-yellow-50 transition-colors"
-                >
-                  <Star
-                    className={cn(
-                      "w-5 h-5 transition-colors",
-                      favorites.some(p => p.name === (tempName || scannedProduct.name))
-                        ? "fill-yellow-400 text-yellow-400"
-                        : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
-                    )}
-                  />
-                </button>
-              )}
             </DialogTitle>
           </DialogHeader>
           {scannedProduct && (
@@ -2975,12 +2947,42 @@ export default function App() {
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <Input
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    className="font-bold text-base text-slate-800 border-none p-0 h-auto focus-visible:ring-0 mb-1"
-                    placeholder="Nom de l'aliment"
-                  />
+                  <div className="flex items-center justify-between gap-1.5">
+                    <Input
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      className="font-bold text-base text-slate-800 border-none p-0 h-auto focus-visible:ring-0 mb-1 flex-1 min-w-0"
+                      placeholder="Nom de l'aliment"
+                    />
+                    {scannedProduct && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const productToFav: LoggedProduct = {
+                            id: scannedProduct.id || Math.random().toString(36).substr(2, 9),
+                            name: tempName || scannedProduct.name || "Produit inconnu",
+                            kcalPer100g: Number(tempKcal) || 0,
+                            proteinPer100g: Number(tempProtein) || 0,
+                            carbsPer100g: Number(tempCarbs) || 0,
+                            fatPer100g: Number(tempFat) || 0,
+                            quantityGrams: Number(tempQuantity) || 100,
+                            imageUrl: scannedProduct.imageUrl
+                          };
+                          toggleFavorite(productToFav);
+                        }}
+                        className="p-1 rounded-xl hover:bg-yellow-50 transition-colors flex-shrink-0"
+                      >
+                        <Star
+                          className={cn(
+                            "w-5 h-5 transition-colors",
+                            favorites.some(p => p.name === (tempName || scannedProduct.name))
+                              ? "fill-yellow-400 text-yellow-400"
+                              : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
+                          )}
+                        />
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <Input
                       type="text"
@@ -3002,9 +3004,9 @@ export default function App() {
 
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Valeurs pour 100g</h4>
-                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
                   <div className="space-y-1">
-                    <Label className="text-[10px] sm:text-[11px] font-bold text-blue-600 flex items-center gap-0.5 sm:gap-1"><Dna className="w-3.5 h-3.5" /> Protéines</Label>
+                    <Label className="text-[9.5px] sm:text-[11px] font-bold text-blue-600 flex items-center gap-0.5"><Dna className="w-3.5 h-3.5" /> Protéines</Label>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -3016,11 +3018,11 @@ export default function App() {
                         setTempProtein(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }}
-                      className="h-9 sm:h-10 text-xs sm:text-sm rounded-xl border-blue-100 focus:border-blue-500 px-2"
+                      className="h-8 sm:h-10 text-[11px] sm:text-sm rounded-xl border-blue-100 focus:border-blue-500 px-1.5 text-center min-w-0 w-full"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[10px] sm:text-[11px] font-bold text-yellow-700 flex items-center gap-0.5 sm:gap-1"><Wheat className="w-3.5 h-3.5" /> Glucides</Label>
+                    <Label className="text-[9.5px] sm:text-[11px] font-bold text-yellow-700 flex items-center gap-0.5"><Wheat className="w-3.5 h-3.5" /> Glucides</Label>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -3032,11 +3034,11 @@ export default function App() {
                         setTempCarbs(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }}
-                      className="h-9 sm:h-10 text-xs sm:text-sm rounded-xl border-yellow-100 focus:border-yellow-500 px-2"
+                      className="h-8 sm:h-10 text-[11px] sm:text-sm rounded-xl border-yellow-100 focus:border-yellow-500 px-1.5 text-center min-w-0 w-full"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[10px] sm:text-[11px] font-bold text-red-600 flex items-center gap-0.5 sm:gap-1"><Droplets className="w-3.5 h-3.5" /> Lipides</Label>
+                    <Label className="text-[9.5px] sm:text-[11px] font-bold text-red-600 flex items-center gap-0.5"><Droplets className="w-3.5 h-3.5" /> Lipides</Label>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -3048,7 +3050,7 @@ export default function App() {
                         setTempFat(v === '' ? '' : v);
                       }}
                       onBlur={(e) => { if (e.target.value === '') setTempFat(0); }}
-                      className="h-9 sm:h-10 text-xs sm:text-sm rounded-xl border-red-100 focus:border-red-500 px-2"
+                      className="h-8 sm:h-10 text-[11px] sm:text-sm rounded-xl border-red-100 focus:border-red-500 px-1.5 text-center min-w-0 w-full"
                     />
                   </div>
                 </div>
