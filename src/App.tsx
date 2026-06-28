@@ -437,6 +437,7 @@ export default function App() {
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
   const [recipeImageUrl, setRecipeImageUrl] = useState("");
   const [isScanningForRecipe, setIsScanningForRecipe] = useState(false);
+  const [reopenProductModalAfterRecipeSave, setReopenProductModalAfterRecipeSave] = useState(false);
 
   // --- Gemini AI states ---
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
@@ -880,6 +881,30 @@ export default function App() {
       return filtered;
     });
 
+    if (reopenProductModalAfterRecipeSave) {
+      setScannedProduct({
+        id: newRecipeProduct.id,
+        name: newRecipeProduct.name,
+        kcalPer100g: newRecipeProduct.kcalPer100g,
+        proteinsPer100g: newRecipeProduct.proteinPer100g,
+        carbsPer100g: newRecipeProduct.carbsPer100g,
+        fatPer100g: newRecipeProduct.fatPer100g,
+        imageUrl: newRecipeProduct.imageUrl,
+        source: 'OFF',
+        servingQuantity: newRecipeProduct.quantityGrams || 100,
+        ingredients: newRecipeProduct.ingredients
+      } as any);
+      setTempName(newRecipeProduct.name);
+      setTempKcal(newRecipeProduct.kcalPer100g);
+      setTempProtein(newRecipeProduct.proteinPer100g);
+      setTempCarbs(newRecipeProduct.carbsPer100g);
+      setTempFat(newRecipeProduct.fatPer100g);
+      setTempQuantity(newRecipeProduct.quantityGrams);
+
+      setIsProductModalOpen(true);
+      setReopenProductModalAfterRecipeSave(false);
+    }
+
     setIsRecipeModalOpen(false);
     setRecipeName("");
     setRecipeIngredients([]);
@@ -1198,13 +1223,21 @@ export default function App() {
     mealIdx?: number;
   }) => {
     const isFav = favorites.some(p => p.name === product.name);
+    const isRecipe = !!product.ingredients || product.name.startsWith("[Recette]");
     return (
-      <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-100 group">
+      <div className={cn(
+        "flex items-center gap-2 p-2.5 rounded-2xl border group transition-colors",
+        isRecipe
+          ? "bg-pink-50/40 border-pink-100/50 hover:bg-pink-50/70"
+          : "bg-slate-50 border-slate-100"
+      )}>
         {/* Clickable main area */}
         <button className="flex items-center gap-2.5 flex-1 min-w-0 text-left" onClick={onOpen}>
           <div className="w-11 h-11 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100 shadow-sm">
             {product.imageUrl ? (
               <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+            ) : isRecipe ? (
+              <ChefHat className="w-5 h-5 text-pink-500 animate-pulse" />
             ) : (
               <Apple className="w-5 h-5 text-slate-300" />
             )}
@@ -2883,6 +2916,7 @@ export default function App() {
                         className="w-full border-pink-200 text-pink-600 hover:bg-pink-50 rounded-2xl h-12 font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1"
                         onClick={() => {
                           setIsProductModalOpen(false);
+                          setReopenProductModalAfterRecipeSave(true);
                           openRecipeForEdit(scannedProduct as any);
                         }}
                       >
