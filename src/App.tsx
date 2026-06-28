@@ -436,6 +436,7 @@ export default function App() {
   const [recipeSearchTab, setRecipeSearchTab] = useState<"recent" | "favorites">("recent");
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
   const [recipeImageUrl, setRecipeImageUrl] = useState("");
+  const [isScanningForRecipe, setIsScanningForRecipe] = useState(false);
 
   // --- Gemini AI states ---
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
@@ -2317,7 +2318,19 @@ export default function App() {
       </Dialog>
 
       {/* ─── Scanner Dialog ──────────────────────────────────────────────────── */}
-      <Dialog open={isScannerOpen} onOpenChange={(open) => { if (!open) scannerRef.current?.stopCamera(); setIsScannerOpen(open); if (open) setTempName(""); }}>
+      <Dialog open={isScannerOpen} onOpenChange={(open) => {
+        if (!open) {
+          scannerRef.current?.stopCamera();
+          setIsScannerOpen(false);
+          if (isScanningForRecipe) {
+            setIsRecipeModalOpen(true);
+            setIsScanningForRecipe(false);
+          }
+        } else {
+          setIsScannerOpen(true);
+          setTempName("");
+        }
+      }}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
           <div className="p-6 pb-4 border-b bg-white">
             <DialogHeader>
@@ -2531,14 +2544,29 @@ export default function App() {
             <div className="space-y-3 pt-4 border-t border-slate-100">
               <h4 className="text-xs font-bold text-slate-500">Ajouter un ingrédient</h4>
               
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  value={recipeSearchQuery}
-                  onChange={(e) => setRecipeSearchQuery(e.target.value)}
-                  placeholder="Rechercher dans l'historique ou favoris..."
-                  className="pl-9 rounded-xl h-10 bg-slate-50 border-slate-200"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input
+                    value={recipeSearchQuery}
+                    onChange={(e) => setRecipeSearchQuery(e.target.value)}
+                    placeholder="Rechercher dans l'historique ou favoris..."
+                    className="pl-9 rounded-xl h-10 bg-slate-50 border-slate-200"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsScanningForRecipe(true);
+                    setIsRecipeModalOpen(false);
+                    setIsScannerOpen(true);
+                  }}
+                  className="h-10 px-3 bg-pink-50 hover:bg-pink-100 border border-pink-100 rounded-xl text-pink-600 font-bold text-xs flex items-center gap-1.5 transition-colors"
+                  title="Scanner un ingrédient"
+                >
+                  <Scan className="w-4 h-4" />
+                  <span>Scanner</span>
+                </button>
               </div>
 
               {/* Onglets récents / favoris */}
@@ -2758,66 +2786,111 @@ export default function App() {
               </div>
 
               {/* Meal selector */}
-              <div className="space-y-2 pt-2">
-                <Label className="text-sm font-bold text-slate-700">Ajouter à un repas</Label>
-                <div className="grid grid-cols-4 gap-2">
-                  {meals.map((meal, idx) => {
-                    const MealIcon = ICON_MAP[meal.icon] || Apple;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setActiveMealIndex(idx)}
-                        className={cn(
-                          "flex flex-col items-center gap-1.5 p-2.5 rounded-2xl border-2 transition-all",
-                          activeMealIndex === idx
-                            ? "border-orange-400 bg-orange-50 shadow-sm"
-                            : "border-slate-100 bg-slate-50 hover:border-slate-200"
-                        )}
-                      >
-                        <MealIcon className={cn("w-5 h-5", meal.color)} />
-                        <span className="text-[9px] font-bold text-slate-600 text-center leading-tight">{meal.title}</span>
-                      </button>
-                    );
-                  })}
+              {!isScanningForRecipe && (
+                <div className="space-y-2 pt-2">
+                  <Label className="text-sm font-bold text-slate-700">Ajouter à un repas</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {meals.map((meal, idx) => {
+                      const MealIcon = ICON_MAP[meal.icon] || Apple;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setActiveMealIndex(idx)}
+                          className={cn(
+                            "flex flex-col items-center gap-1.5 p-2.5 rounded-2xl border-2 transition-all",
+                            activeMealIndex === idx
+                              ? "border-orange-400 bg-orange-50 shadow-sm"
+                              : "border-slate-100 bg-slate-50 hover:border-slate-200"
+                          )}
+                        >
+                          <MealIcon className={cn("w-5 h-5", meal.color)} />
+                          <span className="text-[9px] font-bold text-slate-600 text-center leading-tight">{meal.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-col gap-3 pt-1">
-                <Button
-                  className={cn(
-                    "w-full text-white rounded-2xl h-14 font-bold text-lg shadow-lg transition-all active:scale-[0.98]",
-                    activeMealIndex !== null
-                      ? "bg-orange-500 hover:bg-orange-600 shadow-orange-100"
-                      : "bg-slate-300 cursor-not-allowed"
-                  )}
-                  onClick={addProductToMeal}
-                  disabled={activeMealIndex === null}
-                >
-                  {activeMealIndex !== null
-                    ? `Ajouter au ${meals[activeMealIndex]?.title}`
-                    : "Choisissez un repas ci-dessus"
-                  }
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full border-slate-200 text-slate-600 rounded-2xl h-12 font-bold transition-all active:scale-[0.98]"
-                  onClick={addToHistoryOnly}
-                >
-                  Ajouter à l'historique uniquement
-                </Button>
-                {(scannedProduct as any).ingredients && (
+                {isScanningForRecipe ? (
                   <Button
-                    variant="outline"
-                    className="w-full border-pink-200 text-pink-600 hover:bg-pink-50 rounded-2xl h-12 font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1"
+                    className="w-full bg-pink-600 hover:bg-pink-700 text-white rounded-2xl h-14 font-extrabold shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                     onClick={() => {
+                      const ingredientProduct: LoggedProduct = {
+                        id: scannedProduct.id || Math.random().toString(36).substring(2, 9),
+                        name: tempName || scannedProduct.name || "Produit inconnu",
+                        kcalPer100g: Number(tempKcal) || 0,
+                        proteinPer100g: Number(tempProtein) || 0,
+                        carbsPer100g: Number(tempCarbs) || 0,
+                        fatPer100g: Number(tempFat) || 0,
+                        quantityGrams: Number(tempQuantity) || 100,
+                        imageUrl: scannedProduct.imageUrl,
+                        ingredients: (scannedProduct as any).ingredients
+                      };
+                      
+                      setRecipeIngredients(prev => {
+                        const exists = prev.find(i => i.product.name === ingredientProduct.name);
+                        if (exists) return prev;
+                        return [...prev, {
+                          id: Math.random().toString(36).substring(2, 9),
+                          product: ingredientProduct,
+                          quantity: Number(tempQuantity) || 100
+                        }];
+                      });
+
+                      setProductHistory(prev => {
+                        const filtered = prev.filter(p => p.name !== ingredientProduct.name);
+                        return [ingredientProduct, ...filtered].slice(0, 200);
+                      });
+
                       setIsProductModalOpen(false);
-                      openRecipeForEdit(scannedProduct as any);
+                      setIsRecipeModalOpen(true);
+                      setIsScanningForRecipe(false);
                     }}
                   >
-                    <ChefHat className="w-4 h-4" />
-                    Modifier la recette
+                    <Plus className="w-5 h-5" />
+                    Ajouter à la recette ({tempQuantity}g)
                   </Button>
+                ) : (
+                  <>
+                    <Button
+                      className={cn(
+                        "w-full text-white rounded-2xl h-14 font-bold text-lg shadow-lg transition-all active:scale-[0.98]",
+                        activeMealIndex !== null
+                          ? "bg-orange-500 hover:bg-orange-600 shadow-orange-100"
+                          : "bg-slate-300 cursor-not-allowed"
+                      )}
+                      onClick={addProductToMeal}
+                      disabled={activeMealIndex === null}
+                    >
+                      {activeMealIndex !== null
+                        ? `Ajouter au ${meals[activeMealIndex]?.title}`
+                        : "Choisissez un repas ci-dessus"
+                      }
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full border-slate-200 text-slate-600 rounded-2xl h-12 font-bold transition-all active:scale-[0.98]"
+                      onClick={addToHistoryOnly}
+                    >
+                      Ajouter à l'historique uniquement
+                    </Button>
+                    {(scannedProduct as any).ingredients && (
+                      <Button
+                        variant="outline"
+                        className="w-full border-pink-200 text-pink-600 hover:bg-pink-50 rounded-2xl h-12 font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1"
+                        onClick={() => {
+                          setIsProductModalOpen(false);
+                          openRecipeForEdit(scannedProduct as any);
+                        }}
+                      >
+                        <ChefHat className="w-4 h-4" />
+                        Modifier la recette
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
