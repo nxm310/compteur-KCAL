@@ -51,6 +51,7 @@ import {
   AlertCircle,
   ChefHat,
   Utensils,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -438,6 +439,7 @@ export default function App() {
   const [recipeImageUrl, setRecipeImageUrl] = useState("");
   const [isScanningForRecipe, setIsScanningForRecipe] = useState(false);
   const [reopenProductModalAfterRecipeSave, setReopenProductModalAfterRecipeSave] = useState(false);
+  const [recipeModalActiveTab, setRecipeModalActiveTab] = useState<"create" | "list">("create");
 
   // --- Gemini AI states ---
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
@@ -798,6 +800,17 @@ export default function App() {
     }
     return items;
   }, [productHistory, favorites, recipeSearchTab, recipeSearchQuery]);
+
+  const savedRecipes = useMemo(() => {
+    const recipesMap = new Map<string, LoggedProduct>();
+    [...favorites, ...productHistory].forEach(product => {
+      const isRecipe = !!product.ingredients || product.name.startsWith("[Recette]");
+      if (isRecipe && !recipesMap.has(product.name)) {
+        recipesMap.set(product.name, product);
+      }
+    });
+    return Array.from(recipesMap.values());
+  }, [favorites, productHistory]);
 
   const addIngredientToRecipe = (product: LoggedProduct) => {
     setRecipeIngredients(prev => {
@@ -2421,19 +2434,118 @@ export default function App() {
       {/* ─── Recipes Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={isRecipeModalOpen} onOpenChange={setIsRecipeModalOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
-          <div className="p-6 pb-4 border-b bg-white">
+          <div className="p-6 pb-2 border-b bg-white flex-shrink-0">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-xl font-black text-slate-800">
                 <ChefHat className="w-5 h-5 text-pink-600 animate-pulse" />
-                Créer une recette personnalisée
+                Mes recettes
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-400">
-                Ajoutez des ingrédients pour générer un plat composé réutilisable.
+                Créez ou gérez vos plats composés personnalisés.
               </DialogDescription>
             </DialogHeader>
+
+            {/* Onglets Créer / Liste des recettes */}
+            <div className="grid grid-cols-2 gap-2 mt-4 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setRecipeModalActiveTab("create")}
+                className={cn(
+                  "py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5",
+                  recipeModalActiveTab === "create"
+                    ? "bg-white text-pink-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {editingRecipeId ? "Modifier le plat" : "Créer un plat"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecipeModalActiveTab("list")}
+                className={cn(
+                  "py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5",
+                  recipeModalActiveTab === "list"
+                    ? "bg-white text-pink-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <ChefHat className="w-3.5 h-3.5" />
+                Plats enregistrés ({savedRecipes.length})
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
+          {recipeModalActiveTab === "list" ? (
+            /* Onglet 2: Liste des recettes existantes */
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0 bg-slate-50/50">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vos recettes existantes</h3>
+              {savedRecipes.length > 0 ? (
+                <div className="space-y-3">
+                  {savedRecipes.map((recipe, idx) => (
+                    <div
+                      key={recipe.id || `saved-recipe-${idx}`}
+                      className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-pink-100/50 hover:border-pink-200 transition-all shadow-sm"
+                    >
+                      {/* Image / Icone */}
+                      <div className="w-12 h-12 rounded-xl bg-slate-50 flex-shrink-0 border border-slate-100 flex items-center justify-center overflow-hidden">
+                        {recipe.imageUrl ? (
+                          <img src={recipe.imageUrl} alt="" className="w-full h-full object-contain" />
+                        ) : (
+                          <ChefHat className="w-6 h-6 text-pink-500 animate-pulse" />
+                        )}
+                      </div>
+                      
+                      {/* Description */}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-extrabold text-slate-800 truncate">{recipe.name.replace(/^\[Recette\]\s*/, "")}</p>
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                          {recipe.kcalPer100g} kcal/100g · {recipe.ingredients?.length || 0} ingr.
+                        </p>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Modifier la recette (crayon) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openRecipeForEdit(recipe);
+                            setRecipeModalActiveTab("create");
+                          }}
+                          className="p-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-pink-600 transition-colors border border-pink-100"
+                          title="Modifier la recette"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        {/* Ajouter comme ingrédient (Plus) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            addIngredientToRecipe(recipe);
+                            setRecipeModalActiveTab("create");
+                          }}
+                          className="p-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white transition-colors"
+                          title="Ajouter à la composition"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 px-4 rounded-3xl border-2 border-dashed border-slate-200 text-slate-400 space-y-2 bg-white mt-4">
+                  <ChefHat className="w-12 h-12 text-slate-300 mx-auto" />
+                  <p className="text-sm font-bold">Aucune recette enregistrée</p>
+                  <p className="text-xs text-slate-400">Vos recettes créées apparaîtront ici pour modification ou ajout.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Onglet 1: Formulaire de création / modification */
+            <>
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
             {/* Nom de la recette & Image */}
             <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
               <div 
@@ -2632,23 +2744,47 @@ export default function App() {
               {/* Liste filtrée des aliments disponibles */}
               <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
                 {recipeFilteredHistory.length > 0 ? (
-                  recipeFilteredHistory.slice(0, 15).map((product, idx) => (
-                    <button
-                      key={product.id ? `recipe-search-${product.id}` : `recipe-search-name-${product.name}-${idx}`}
-                      onClick={() => addIngredientToRecipe(product)}
-                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-pink-50/30 border border-slate-100 hover:border-pink-200 transition-all text-left group"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-700 truncate group-hover:text-pink-600 transition-colors">
-                          {product.name}
-                        </p>
-                        <p className="text-[9px] text-slate-400 font-medium">
-                          {product.kcalPer100g} kcal/100g
-                        </p>
+                  recipeFilteredHistory.slice(0, 15).map((product, idx) => {
+                    const isRecipeItem = !!product.ingredients || product.name.startsWith("[Recette]");
+                    return (
+                      <div
+                        key={product.id ? `recipe-search-${product.id}` : `recipe-search-name-${product.name}-${idx}`}
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:border-pink-200 transition-all group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-700 truncate group-hover:text-pink-600 transition-colors">
+                            {product.name}
+                          </p>
+                          <p className="text-[9px] text-slate-400 font-medium">
+                            {product.kcalPer100g} kcal/100g
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {isRecipeItem && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openRecipeForEdit(product);
+                                setRecipeModalActiveTab("create");
+                              }}
+                              className="p-1.5 rounded-lg bg-pink-50 hover:bg-pink-100 text-pink-600 transition-colors border border-pink-100"
+                              title="Modifier cette recette"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => addIngredientToRecipe(product)}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-pink-600 hover:text-white text-slate-500 transition-all"
+                            title="Ajouter comme ingrédient"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <Plus className="w-4 h-4 text-slate-400 group-hover:text-pink-600 transition-colors flex-shrink-0" />
-                    </button>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="text-[10px] text-slate-400 text-center py-4">Aucun aliment trouvé</p>
                 )}
@@ -2656,22 +2792,24 @@ export default function App() {
             </div>
           </div>
 
-          <div className="p-6 border-t bg-white flex gap-3 flex-shrink-0">
-            <Button
-              variant="outline"
-              onClick={() => setIsRecipeModalOpen(false)}
-              className="flex-1 rounded-2xl h-12 font-bold"
-            >
-              Annuler
-            </Button>
-            <Button
-              onClick={handleSaveRecipe}
-              disabled={!recipeName.trim() || recipeIngredients.length === 0}
-              className="flex-1 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl h-12 font-extrabold shadow-lg shadow-pink-200/50"
-            >
-              Enregistrer la recette
-            </Button>
-          </div>
+              <div className="p-6 border-t bg-white flex gap-3 flex-shrink-0">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsRecipeModalOpen(false)}
+                  className="flex-1 rounded-2xl h-12 font-bold"
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={handleSaveRecipe}
+                  disabled={!recipeName.trim() || recipeIngredients.length === 0}
+                  className="flex-1 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl h-12 font-extrabold shadow-lg shadow-pink-200/50"
+                >
+                  Enregistrer la recette
+                </Button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
