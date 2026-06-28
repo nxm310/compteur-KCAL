@@ -2895,10 +2895,38 @@ export default function App() {
       </Dialog>
 
       <Dialog open={isProductModalOpen} onOpenChange={setIsProductModalOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto px-3 py-5 sm:p-6 overflow-x-hidden">
+        <DialogContent className="w-[calc(100%-1.5rem)] sm:max-w-md rounded-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between pr-8">
+            <DialogTitle className="flex items-center gap-2 pr-8">
               <span>Détails du produit</span>
+              {scannedProduct && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const productToFav: LoggedProduct = {
+                      id: scannedProduct.id || Math.random().toString(36).substr(2, 9),
+                      name: tempName || scannedProduct.name || "Produit inconnu",
+                      kcalPer100g: Number(tempKcal) || 0,
+                      proteinPer100g: Number(tempProtein) || 0,
+                      carbsPer100g: Number(tempCarbs) || 0,
+                      fatPer100g: Number(tempFat) || 0,
+                      quantityGrams: Number(tempQuantity) || 100,
+                      imageUrl: scannedProduct.imageUrl
+                    };
+                    toggleFavorite(productToFav);
+                  }}
+                  className="p-1 rounded-xl hover:bg-yellow-50 transition-colors flex-shrink-0"
+                >
+                  <Star
+                    className={cn(
+                      "w-4.5 h-4.5 transition-colors",
+                      favorites.some(p => p.name === (tempName || scannedProduct.name))
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
+                    )}
+                  />
+                </button>
+              )}
             </DialogTitle>
           </DialogHeader>
           {scannedProduct && (
@@ -2947,42 +2975,12 @@ export default function App() {
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-1.5">
-                    <Input
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      className="font-bold text-base text-slate-800 border-none p-0 h-auto focus-visible:ring-0 mb-1 flex-1 min-w-0"
-                      placeholder="Nom de l'aliment"
-                    />
-                    {scannedProduct && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const productToFav: LoggedProduct = {
-                            id: scannedProduct.id || Math.random().toString(36).substr(2, 9),
-                            name: tempName || scannedProduct.name || "Produit inconnu",
-                            kcalPer100g: Number(tempKcal) || 0,
-                            proteinPer100g: Number(tempProtein) || 0,
-                            carbsPer100g: Number(tempCarbs) || 0,
-                            fatPer100g: Number(tempFat) || 0,
-                            quantityGrams: Number(tempQuantity) || 100,
-                            imageUrl: scannedProduct.imageUrl
-                          };
-                          toggleFavorite(productToFav);
-                        }}
-                        className="p-1 rounded-xl hover:bg-yellow-50 transition-colors flex-shrink-0"
-                      >
-                        <Star
-                          className={cn(
-                            "w-5 h-5 transition-colors",
-                            favorites.some(p => p.name === (tempName || scannedProduct.name))
-                              ? "fill-yellow-400 text-yellow-400"
-                              : "text-yellow-300 hover:text-yellow-400 hover:fill-yellow-400"
-                          )}
-                        />
-                      </button>
-                    )}
-                  </div>
+                  <Input
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    className="font-bold text-base text-slate-800 border-none p-0 h-auto focus-visible:ring-0 mb-1"
+                    placeholder="Nom de l'aliment"
+                  />
                   <div className="flex items-center gap-2">
                     <Input
                       type="text"
@@ -3138,7 +3136,7 @@ export default function App() {
               {!isScanningForRecipe && (
                 <div className="space-y-2 pt-2">
                   <Label className="text-sm font-bold text-slate-700">Ajouter à un repas</Label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-4 gap-1.5">
                     {meals.map((meal, idx) => {
                       const MealIcon = ICON_MAP[meal.icon] || Apple;
                       return (
@@ -3147,14 +3145,14 @@ export default function App() {
                           type="button"
                           onClick={() => setActiveMealIndex(idx)}
                           className={cn(
-                            "flex flex-col items-center gap-1.5 p-2.5 rounded-2xl border-2 transition-all",
+                            "flex flex-col items-center gap-1 p-2 rounded-2xl border-2 transition-all",
                             activeMealIndex === idx
                               ? "border-orange-400 bg-orange-50 shadow-sm"
                               : "border-slate-100 bg-slate-50 hover:border-slate-200"
                           )}
                         >
-                          <MealIcon className={cn("w-5 h-5", meal.color)} />
-                          <span className="text-[9px] font-bold text-slate-600 text-center leading-tight">{meal.title}</span>
+                          <MealIcon className={cn("w-4.5 h-4.5", meal.color)} />
+                          <span className="text-[9px] font-bold text-slate-600 text-center leading-none mt-0.5">{meal.title}</span>
                         </button>
                       );
                     })}
