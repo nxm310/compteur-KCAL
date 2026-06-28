@@ -242,11 +242,19 @@ export default function App() {
   const meals = useMemo(() => mealsByDate[dateKey] || INITIAL_MEALS, [mealsByDate, dateKey]);
 
   useEffect(() => {
-    localStorage.setItem("calo_profile_v2", JSON.stringify(profile));
+    try {
+      localStorage.setItem("calo_profile_v2", JSON.stringify(profile));
+    } catch (e) {
+      console.error("Error saving profile:", e);
+    }
   }, [profile]);
 
   useEffect(() => {
-    localStorage.setItem("calo_meals_v2", JSON.stringify(mealsByDate));
+    try {
+      localStorage.setItem("calo_meals_v2", JSON.stringify(mealsByDate));
+    } catch (e) {
+      console.error("Error saving meals:", e);
+    }
   }, [mealsByDate]);
 
   const setMeals = (newMeals: MealState[]) => {
@@ -269,7 +277,11 @@ export default function App() {
   const activities = useMemo(() => activitiesByDate[dateKey] || [], [activitiesByDate, dateKey]);
 
   useEffect(() => {
-    localStorage.setItem("calo_activities_v2", JSON.stringify(activitiesByDate));
+    try {
+      localStorage.setItem("calo_activities_v2", JSON.stringify(activitiesByDate));
+    } catch (e) {
+      console.error("Error saving activities:", e);
+    }
   }, [activitiesByDate]);
 
   const setActivities = (newActivities: Activity[]) => {
@@ -292,11 +304,15 @@ export default function App() {
           if (savedHistory) historyList = JSON.parse(savedHistory);
         } catch {}
         
-        return parsed.map(item => {
+        const cleanFavs: LoggedProduct[] = [];
+        const seenNames = new Set<string>();
+
+        parsed.forEach(item => {
+          let productObj: any = item;
           if (typeof item === "string") {
             const histProduct = historyList.find(hp => hp.name === item);
-            return histProduct || {
-              id: Math.random().toString(36).substr(2, 9),
+            productObj = histProduct || {
+              id: Math.random().toString(36).substring(2, 9),
               name: item,
               kcalPer100g: 0,
               proteinPer100g: 0,
@@ -305,8 +321,25 @@ export default function App() {
               quantityGrams: 100,
             };
           }
-          return item;
+
+          if (!productObj || typeof productObj !== "object") return;
+          const name = (productObj.name || "Produit inconnu").trim();
+          if (seenNames.has(name)) return;
+          seenNames.add(name);
+
+          cleanFavs.push({
+            id: productObj.id || Math.random().toString(36).substring(2, 9),
+            name: name,
+            kcalPer100g: isNaN(Number(productObj.kcalPer100g)) ? 0 : Number(productObj.kcalPer100g),
+            proteinPer100g: isNaN(Number(productObj.proteinPer100g)) ? 0 : Number(productObj.proteinPer100g),
+            carbsPer100g: isNaN(Number(productObj.carbsPer100g)) ? 0 : Number(productObj.carbsPer100g),
+            fatPer100g: isNaN(Number(productObj.fatPer100g)) ? 0 : Number(productObj.fatPer100g),
+            quantityGrams: isNaN(Number(productObj.quantityGrams)) ? 100 : Number(productObj.quantityGrams),
+            imageUrl: productObj.imageUrl || "",
+          });
         });
+
+        return cleanFavs;
       }
       return [];
     } catch { return []; }
@@ -316,7 +349,11 @@ export default function App() {
   const [historyTab, setHistoryTab] = useState<"recent" | "favorites">("recent");
 
   useEffect(() => {
-    localStorage.setItem("calo_favorites_v2", JSON.stringify(favorites));
+    try {
+      localStorage.setItem("calo_favorites_v2", JSON.stringify(favorites));
+    } catch (e) {
+      console.error("Error saving favorites:", e);
+    }
   }, [favorites]);
 
   const toggleFavorite = useCallback((product: LoggedProduct) => {
@@ -411,7 +448,11 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem("calo_weight_history_v1", JSON.stringify(weightHistory));
+    try {
+      localStorage.setItem("calo_weight_history_v1", JSON.stringify(weightHistory));
+    } catch (e) {
+      console.error("Error saving weight history:", e);
+    }
   }, [weightHistory]);
 
   const logWeight = (w: number, date?: string) => {
@@ -606,7 +647,32 @@ export default function App() {
   const [productHistory, setProductHistory] = useState<LoggedProduct[]>(() => {
     try {
       const saved = localStorage.getItem("calo_history_v2");
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+
+      const cleanHistory: LoggedProduct[] = [];
+      const seenNames = new Set<string>();
+
+      parsed.forEach((product: any) => {
+        if (!product || typeof product !== "object") return;
+        const name = (product.name || "Produit inconnu").trim();
+        if (seenNames.has(name)) return;
+        seenNames.add(name);
+
+        cleanHistory.push({
+          id: product.id || Math.random().toString(36).substring(2, 9),
+          name: name,
+          kcalPer100g: isNaN(Number(product.kcalPer100g)) ? 0 : Number(product.kcalPer100g),
+          proteinPer100g: isNaN(Number(product.proteinPer100g)) ? 0 : Number(product.proteinPer100g),
+          carbsPer100g: isNaN(Number(product.carbsPer100g)) ? 0 : Number(product.carbsPer100g),
+          fatPer100g: isNaN(Number(product.fatPer100g)) ? 0 : Number(product.fatPer100g),
+          quantityGrams: isNaN(Number(product.quantityGrams)) ? 100 : Number(product.quantityGrams),
+          imageUrl: product.imageUrl || "",
+        });
+      });
+
+      return cleanHistory.slice(0, 200);
     } catch (e) {
       console.error("Error parsing history:", e);
       return [];
@@ -614,7 +680,11 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem("calo_history_v2", JSON.stringify(productHistory));
+    try {
+      localStorage.setItem("calo_history_v2", JSON.stringify(productHistory));
+    } catch (e) {
+      console.error("Error saving product history:", e);
+    }
   }, [productHistory]);
 
   const [scannedProduct, setScannedProduct] = useState<UnifiedProduct | null>(null);
@@ -1896,9 +1966,9 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                {filteredHistory.map((product) => (
+                {filteredHistory.map((product, idx) => (
                   <HistoryItem
-                    key={product.id}
+                    key={product.id ? `hist-${product.id}` : `hist-name-${product.name}-${idx}`}
                     product={product}
                     onOpen={() => {
                       openProductFromHistory(product);
@@ -2074,9 +2144,9 @@ export default function App() {
               <div className="space-y-3 pt-4 border-t border-slate-100">
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Historique récent</h4>
                 <div className="grid grid-cols-1 gap-2">
-                  {productHistory.slice(0, 10).map((product) => (
+                  {productHistory.slice(0, 10).map((product, idx) => (
                     <HistoryItem
-                      key={product.id}
+                      key={product.id ? `scan-${product.id}` : `scan-name-${product.name}-${idx}`}
                       product={product}
                       showMealButtons={activeMealIndex !== null}
                       onOpen={() => {
