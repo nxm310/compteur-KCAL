@@ -49,6 +49,8 @@ import {
   Star,
   Sparkles,
   AlertCircle,
+  ChefHat,
+  Utensils,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -384,8 +386,16 @@ export default function App() {
     }, 100);
     return () => clearTimeout(timer);
   }, [isHistoryOpen]);
+
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+
+  // --- Recipe states ---
+  const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
+  const [recipeName, setRecipeName] = useState("");
+  const [recipeIngredients, setRecipeIngredients] = useState<{ id: string; product: LoggedProduct; quantity: number }[]>([]);
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState("");
+  const [recipeSearchTab, setRecipeSearchTab] = useState<"recent" | "favorites">("recent");
 
   // --- Gemini AI states ---
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
@@ -736,6 +746,87 @@ export default function App() {
     }
     return items;
   }, [productHistory, favorites, historyTab, historySearch]);
+
+  // ─── Filtered history for Recipe ingredients ──────────────────────────────
+  const recipeFilteredHistory = useMemo(() => {
+    let items = recipeSearchTab === "favorites" ? favorites : productHistory;
+    if (recipeSearchQuery.trim()) {
+      const q = recipeSearchQuery.toLowerCase();
+      items = items.filter(p => p.name.toLowerCase().includes(q));
+    }
+    return items;
+  }, [productHistory, favorites, recipeSearchTab, recipeSearchQuery]);
+
+  const addIngredientToRecipe = (product: LoggedProduct) => {
+    setRecipeIngredients(prev => {
+      const exists = prev.find(i => i.product.name === product.name);
+      if (exists) return prev;
+      return [...prev, {
+        id: Math.random().toString(36).substring(2, 9),
+        product,
+        quantity: 100
+      }];
+    });
+  };
+
+  const removeIngredientFromRecipe = (id: string) => {
+    setRecipeIngredients(prev => prev.filter(i => i.id !== id));
+  };
+
+  const updateIngredientQuantity = (id: string, qty: number) => {
+    setRecipeIngredients(prev => prev.map(i => i.id === id ? { ...i, quantity: isNaN(qty) ? 0 : qty } : i));
+  };
+
+  const handleSaveRecipe = () => {
+    if (!recipeName.trim() || recipeIngredients.length === 0) return;
+
+    const totalWeight = recipeIngredients.reduce((sum, i) => sum + i.quantity, 0);
+    if (totalWeight <= 0) return;
+
+    let totalKcal = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFat = 0;
+
+    recipeIngredients.forEach(i => {
+      const factor = i.quantity / 100;
+      totalKcal += (i.product.kcalPer100g || 0) * factor;
+      totalProtein += (i.product.proteinPer100g || 0) * factor;
+      totalCarbs += (i.product.carbsPer100g || 0) * factor;
+      totalFat += (i.product.fatPer100g || 0) * factor;
+    });
+
+    const kcalPer100g = Math.round((totalKcal / totalWeight) * 100);
+    const proteinPer100g = Number(((totalProtein / totalWeight) * 100).toFixed(1));
+    const carbsPer100g = Number(((totalCarbs / totalWeight) * 100).toFixed(1));
+    const fatPer100g = Number(((totalFat / totalWeight) * 100).toFixed(1));
+
+    const newRecipeProduct: LoggedProduct = {
+      id: `recipe-${Math.random().toString(36).substring(2, 9)}`,
+      name: `[Recette] ${recipeName.trim()}`,
+      kcalPer100g,
+      proteinPer100g,
+      carbsPer100g,
+      fatPer100g,
+      quantityGrams: Math.round(totalWeight),
+      imageUrl: "",
+    };
+
+    setProductHistory(prev => {
+      const filtered = prev.filter(p => p.name !== newRecipeProduct.name);
+      return [newRecipeProduct, ...filtered].slice(0, 200);
+    });
+
+    setFavorites(prev => {
+      const exists = prev.some(p => p.name === newRecipeProduct.name);
+      if (exists) return prev;
+      return [newRecipeProduct, ...prev];
+    });
+
+    setIsRecipeModalOpen(false);
+    setRecipeName("");
+    setRecipeIngredients([]);
+  };
 
   // ─── Totals ───────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
@@ -1413,6 +1504,28 @@ export default function App() {
                   <Sparkles className="w-5 h-5 text-violet-100" />
                 </div>
                 Estimer via Gemini AI
+              </button>
+            </motion.div>
+
+            {/* Recipes Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.7 }}
+            >
+              <button
+                onClick={() => {
+                  setRecipeName("");
+                  setRecipeIngredients([]);
+                  setRecipeSearchQuery("");
+                  setIsRecipeModalOpen(true);
+                }}
+                className="w-full h-16 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-pink-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              >
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <ChefHat className="w-5 h-5" />
+                </div>
+                Mes recettes
               </button>
             </motion.div>
           </motion.main>
@@ -2165,6 +2278,211 @@ export default function App() {
                 Recherche du produit...
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Recipes Dialog ─────────────────────────────────────────────────── */}
+      <Dialog open={isRecipeModalOpen} onOpenChange={setIsRecipeModalOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
+          <div className="p-6 pb-4 border-b bg-white">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl font-black text-slate-800">
+                <ChefHat className="w-5 h-5 text-pink-600 animate-pulse" />
+                Créer une recette personnalisée
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Ajoutez des ingrédients pour générer un plat composé réutilisable.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
+            {/* Nom de la recette */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-500">Nom de la recette</Label>
+              <Input
+                type="text"
+                placeholder="Ex: Mon gâteau choco, Salade composée..."
+                value={recipeName}
+                onChange={(e) => setRecipeName(e.target.value)}
+                className="rounded-xl h-11 border-slate-200 focus-visible:ring-pink-500 font-bold"
+              />
+            </div>
+
+            {/* Ingrédients ajoutés */}
+            <div className="space-y-3">
+              <Label className="text-xs font-bold text-slate-500 flex items-center justify-between">
+                <span>Ingrédients ({recipeIngredients.length})</span>
+                <span className="text-[10px] text-slate-400 font-medium">Quantité en grammes</span>
+              </Label>
+
+              {recipeIngredients.length > 0 ? (
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                  {recipeIngredients.map((ingredient) => (
+                    <div key={ingredient.id} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 truncate">{ingredient.product.name}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {ingredient.product.kcalPer100g} kcal/100g
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={ingredient.quantity}
+                          onChange={(e) => updateIngredientQuantity(ingredient.id, parseInt(e.target.value))}
+                          className="w-16 h-8 text-center rounded-lg border-slate-200 focus-visible:ring-pink-500 text-xs font-extrabold p-1"
+                        />
+                        <button
+                          onClick={() => removeIngredientFromRecipe(ingredient.id)}
+                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 px-4 rounded-2xl border-2 border-dashed border-slate-100 text-slate-400 space-y-1">
+                  <Utensils className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold">Aucun ingrédient</p>
+                  <p className="text-[10px] text-slate-400">Recherchez ci-dessous pour ajouter des aliments</p>
+                </div>
+              )}
+            </div>
+
+            {/* Aperçu nutritionnel de la recette */}
+            {recipeIngredients.length > 0 && (() => {
+              const totalWeight = recipeIngredients.reduce((sum, i) => sum + i.quantity, 0);
+              let totalKcal = 0;
+              let totalProtein = 0;
+              let totalCarbs = 0;
+              let totalFat = 0;
+
+              recipeIngredients.forEach(i => {
+                const factor = i.quantity / 100;
+                totalKcal += (i.product.kcalPer100g || 0) * factor;
+                totalProtein += (i.product.proteinPer100g || 0) * factor;
+                totalCarbs += (i.product.carbsPer100g || 0) * factor;
+                totalFat += (i.product.fatPer100g || 0) * factor;
+              });
+
+              const kcalPer100 = totalWeight > 0 ? Math.round((totalKcal / totalWeight) * 100) : 0;
+
+              return (
+                <div className="bg-pink-50/30 border border-pink-100/50 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-pink-700">
+                    <span>Aperçu de la recette</span>
+                    <span>Poids total : {Math.round(totalWeight)}g</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="bg-white/80 rounded-xl p-2 border border-pink-100">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Calories</span>
+                      <span className="text-xs font-black text-pink-600">{Math.round(totalKcal)} kcal</span>
+                      <span className="text-[8px] text-slate-400 block mt-0.5">({kcalPer100}/100g)</span>
+                    </div>
+                    <div className="bg-white/80 rounded-xl p-2 border border-pink-100">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Prot.</span>
+                      <span className="text-xs font-black text-orange-600">{totalProtein.toFixed(1)}g</span>
+                    </div>
+                    <div className="bg-white/80 rounded-xl p-2 border border-pink-100">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Gluc.</span>
+                      <span className="text-xs font-black text-yellow-600">{totalCarbs.toFixed(1)}g</span>
+                    </div>
+                    <div className="bg-white/80 rounded-xl p-2 border border-pink-100">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Lipi.</span>
+                      <span className="text-xs font-black text-indigo-600">{totalFat.toFixed(1)}g</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Moteur de recherche d'ingrédients */}
+            <div className="space-y-3 pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-slate-500">Ajouter un ingrédient</h4>
+              
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  value={recipeSearchQuery}
+                  onChange={(e) => setRecipeSearchQuery(e.target.value)}
+                  placeholder="Rechercher dans l'historique ou favoris..."
+                  className="pl-9 rounded-xl h-10 bg-slate-50 border-slate-200"
+                />
+              </div>
+
+              {/* Onglets récents / favoris */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setRecipeSearchTab("recent")}
+                  className={cn(
+                    "h-8 rounded-lg text-xs font-bold transition-all",
+                    recipeSearchTab === "recent"
+                      ? "bg-slate-800 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  )}
+                >
+                  Récents ({productHistory.length})
+                </button>
+                <button
+                  onClick={() => setRecipeSearchTab("favorites")}
+                  className={cn(
+                    "h-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1",
+                    recipeSearchTab === "favorites"
+                      ? "bg-yellow-400 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  )}
+                >
+                  <Star className={cn("w-3 h-3", recipeSearchTab === "favorites" ? "fill-white" : "")} />
+                  Favoris ({favorites.length})
+                </button>
+              </div>
+
+              {/* Liste filtrée des aliments disponibles */}
+              <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                {recipeFilteredHistory.length > 0 ? (
+                  recipeFilteredHistory.slice(0, 15).map((product, idx) => (
+                    <button
+                      key={product.id ? `recipe-search-${product.id}` : `recipe-search-name-${product.name}-${idx}`}
+                      onClick={() => addIngredientToRecipe(product)}
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-pink-50/30 border border-slate-100 hover:border-pink-200 transition-all text-left group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-700 truncate group-hover:text-pink-600 transition-colors">
+                          {product.name}
+                        </p>
+                        <p className="text-[9px] text-slate-400 font-medium">
+                          {product.kcalPer100g} kcal/100g
+                        </p>
+                      </div>
+                      <Plus className="w-4 h-4 text-slate-400 group-hover:text-pink-600 transition-colors flex-shrink-0" />
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-slate-400 text-center py-4">Aucun aliment trouvé</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 border-t bg-white flex gap-3 flex-shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsRecipeModalOpen(false)}
+              className="flex-1 rounded-2xl h-12 font-bold"
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleSaveRecipe}
+              disabled={!recipeName.trim() || recipeIngredients.length === 0}
+              className="flex-1 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl h-12 font-extrabold shadow-lg shadow-pink-200/50"
+            >
+              Enregistrer la recette
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
