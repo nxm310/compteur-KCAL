@@ -377,6 +377,7 @@ export default function App() {
             fatPer100g: isNaN(Number(productObj.fatPer100g)) ? 0 : Number(productObj.fatPer100g),
             quantityGrams: isNaN(Number(productObj.quantityGrams)) ? 100 : Number(productObj.quantityGrams),
             imageUrl: productObj.imageUrl || "",
+            ingredients: productObj.ingredients
           });
         });
 
@@ -723,6 +724,7 @@ export default function App() {
           fatPer100g: isNaN(Number(product.fatPer100g)) ? 0 : Number(product.fatPer100g),
           quantityGrams: isNaN(Number(product.quantityGrams)) ? 100 : Number(product.quantityGrams),
           imageUrl: product.imageUrl || "",
+          ingredients: product.ingredients
         });
       });
 
