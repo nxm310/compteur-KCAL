@@ -78,7 +78,45 @@ interface LoggedProduct {
   fatPer100g: number;
   quantityGrams: number;
   imageUrl?: string;
+  ingredients?: { id: string; name: string; kcalPer100g: number; proteinPer100g: number; carbsPer100g: number; fatPer100g: number; quantity: number; imageUrl?: string }[];
 }
+
+const compressAndResizeImage = (base64Str: string, maxWidth = 200, maxHeight = 200): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+  });
+};
 
 interface MealState {
   title: string;
@@ -396,6 +434,8 @@ export default function App() {
   const [recipeIngredients, setRecipeIngredients] = useState<{ id: string; product: LoggedProduct; quantity: number }[]>([]);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState("");
   const [recipeSearchTab, setRecipeSearchTab] = useState<"recent" | "favorites">("recent");
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [recipeImageUrl, setRecipeImageUrl] = useState("");
 
   // --- Gemini AI states ---
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
@@ -801,31 +841,77 @@ export default function App() {
     const carbsPer100g = Number(((totalCarbs / totalWeight) * 100).toFixed(1));
     const fatPer100g = Number(((totalFat / totalWeight) * 100).toFixed(1));
 
+    const ingredientsData = recipeIngredients.map(i => ({
+      id: i.id,
+      name: i.product.name,
+      kcalPer100g: i.product.kcalPer100g,
+      proteinPer100g: i.product.proteinPer100g,
+      carbsPer100g: i.product.carbsPer100g,
+      fatPer100g: i.product.fatPer100g,
+      quantity: i.quantity,
+      imageUrl: i.product.imageUrl
+    }));
+
     const newRecipeProduct: LoggedProduct = {
-      id: `recipe-${Math.random().toString(36).substring(2, 9)}`,
-      name: `[Recette] ${recipeName.trim()}`,
+      id: editingRecipeId || `recipe-${Math.random().toString(36).substring(2, 9)}`,
+      name: recipeName.trim().startsWith("[Recette]") ? recipeName.trim() : `[Recette] ${recipeName.trim()}`,
       kcalPer100g,
       proteinPer100g,
       carbsPer100g,
       fatPer100g,
       quantityGrams: Math.round(totalWeight),
-      imageUrl: "",
+      imageUrl: recipeImageUrl || "",
+      ingredients: ingredientsData
     };
 
     setProductHistory(prev => {
-      const filtered = prev.filter(p => p.name !== newRecipeProduct.name);
+      const filtered = prev.filter(p => p.id !== newRecipeProduct.id && p.name !== newRecipeProduct.name);
       return [newRecipeProduct, ...filtered].slice(0, 200);
     });
 
     setFavorites(prev => {
-      const exists = prev.some(p => p.name === newRecipeProduct.name);
-      if (exists) return prev;
-      return [newRecipeProduct, ...prev];
+      const isAlreadyFav = prev.some(p => p.id === newRecipeProduct.id || p.name === newRecipeProduct.name);
+      const filtered = prev.filter(p => p.id !== newRecipeProduct.id && p.name !== newRecipeProduct.name);
+      // On la remet en favori si elle y était déjà, ou on la rajoute d'office si c'était une création de recette
+      if (isAlreadyFav || !editingRecipeId) {
+        return [newRecipeProduct, ...filtered];
+      }
+      return filtered;
     });
 
     setIsRecipeModalOpen(false);
     setRecipeName("");
     setRecipeIngredients([]);
+    setRecipeImageUrl("");
+    setEditingRecipeId(null);
+  };
+
+  const openRecipeForEdit = (recipe: LoggedProduct) => {
+    setEditingRecipeId(recipe.id);
+    setRecipeName(recipe.name.replace(/^\[Recette\]\s*/, ""));
+    setRecipeImageUrl(recipe.imageUrl || "");
+    
+    if (recipe.ingredients) {
+      const ingredientsState = recipe.ingredients.map(i => ({
+        id: i.id,
+        quantity: i.quantity,
+        product: {
+          id: i.id,
+          name: i.name,
+          kcalPer100g: i.kcalPer100g,
+          proteinPer100g: i.proteinPer100g,
+          carbsPer100g: i.carbsPer100g,
+          fatPer100g: i.fatPer100g,
+          quantityGrams: i.quantity,
+          imageUrl: i.imageUrl
+        }
+      }));
+      setRecipeIngredients(ingredientsState);
+    } else {
+      setRecipeIngredients([]);
+    }
+    
+    setIsRecipeModalOpen(true);
   };
 
   // ─── Totals ───────────────────────────────────────────────────────────────
@@ -940,6 +1026,7 @@ export default function App() {
         fatPer100g: Number(tempFat) || 0,
         quantityGrams: Number(tempQuantity) || 0,
         imageUrl: scannedProduct.imageUrl,
+        ingredients: (scannedProduct as any).ingredients
       };
       const updatedMeals = [...meals];
       updatedMeals[activeMealIndex].products.push(newProduct);
@@ -964,6 +1051,7 @@ export default function App() {
         fatPer100g: Number(tempFat) || 0,
         quantityGrams: Number(tempQuantity) || 0,
         imageUrl: scannedProduct.imageUrl,
+        ingredients: (scannedProduct as any).ingredients
       };
       setProductHistory(prev => {
         const filtered = prev.filter(p => p.name !== newProduct.name);
@@ -1450,6 +1538,30 @@ export default function App() {
               </button>
             </motion.div>
 
+            {/* Recipes Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.48 }}
+            >
+              <button
+                onClick={() => {
+                  setRecipeName("");
+                  setRecipeIngredients([]);
+                  setRecipeSearchQuery("");
+                  setRecipeImageUrl("");
+                  setEditingRecipeId(null);
+                  setIsRecipeModalOpen(true);
+                }}
+                className="w-full h-16 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-pink-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              >
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <ChefHat className="w-5 h-5" />
+                </div>
+                Mes recettes
+              </button>
+            </motion.div>
+
             {/* Activities Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -1504,28 +1616,6 @@ export default function App() {
                   <Sparkles className="w-5 h-5 text-violet-100" />
                 </div>
                 Estimer via Gemini AI
-              </button>
-            </motion.div>
-
-            {/* Recipes Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.7 }}
-            >
-              <button
-                onClick={() => {
-                  setRecipeName("");
-                  setRecipeIngredients([]);
-                  setRecipeSearchQuery("");
-                  setIsRecipeModalOpen(true);
-                }}
-                className="w-full h-16 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-pink-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-              >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-                  <ChefHat className="w-5 h-5" />
-                </div>
-                Mes recettes
               </button>
             </motion.div>
           </motion.main>
@@ -2298,16 +2388,53 @@ export default function App() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
-            {/* Nom de la recette */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-500">Nom de la recette</Label>
-              <Input
-                type="text"
-                placeholder="Ex: Mon gâteau choco, Salade composée..."
-                value={recipeName}
-                onChange={(e) => setRecipeName(e.target.value)}
-                className="rounded-xl h-11 border-slate-200 focus-visible:ring-pink-500 font-bold"
-              />
+            {/* Nom de la recette & Image */}
+            <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+              <div 
+                onClick={() => document.getElementById('recipe-custom-image-input')?.click()}
+                className="relative w-16 h-16 rounded-xl bg-white p-1 shadow-sm border border-slate-100 flex items-center justify-center overflow-hidden cursor-pointer group flex-shrink-0"
+                title="Ajouter une photo pour la recette"
+              >
+                {recipeImageUrl ? (
+                  <img
+                    src={recipeImageUrl}
+                    alt=""
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <ChefHat className="w-6 h-6 text-slate-300 group-hover:text-pink-500 transition-colors" />
+                )}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
+                  <Plus className="w-5 h-5 text-white" />
+                </div>
+                <input
+                  type="file"
+                  id="recipe-custom-image-input"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = reader.result as string;
+                      const compressed = await compressAndResizeImage(base64);
+                      setRecipeImageUrl(compressed);
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <Label className="text-xs font-bold text-slate-500 mb-1 block">Nom de la recette</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Mon gâteau choco, Salade..."
+                  value={recipeName}
+                  onChange={(e) => setRecipeName(e.target.value)}
+                  className="rounded-xl h-10 border-slate-200 focus-visible:ring-pink-500 font-bold bg-white"
+                />
+              </div>
             </div>
 
             {/* Ingrédients ajoutés */}
@@ -2525,14 +2652,48 @@ export default function App() {
           {scannedProduct && (
             <div className="space-y-5 py-2">
               <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                {scannedProduct.imageUrl && (
-                  <img
-                    src={scannedProduct.imageUrl}
-                    alt={scannedProduct.name}
-                    className="w-16 h-16 object-contain rounded-xl bg-white p-1 shadow-sm"
-                    referrerPolicy="no-referrer"
+                <div 
+                  onClick={() => document.getElementById('product-custom-image-input')?.click()}
+                  className="relative w-16 h-16 rounded-xl bg-white p-1 shadow-sm border border-slate-100 flex items-center justify-center overflow-hidden cursor-pointer group flex-shrink-0"
+                  title="Ajouter ou modifier la photo"
+                >
+                  {scannedProduct.imageUrl ? (
+                    <img
+                      src={scannedProduct.imageUrl}
+                      alt=""
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <Apple className="w-6 h-6 text-slate-300 group-hover:text-pink-500 transition-colors" />
+                  )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
+                    <Plus className="w-5 h-5 text-white" />
+                  </div>
+                  <input
+                    type="file"
+                    id="product-custom-image-input"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onloadend = async () => {
+                        const base64 = reader.result as string;
+                        const compressed = await compressAndResizeImage(base64);
+                        
+                        setScannedProduct(prev => prev ? { ...prev, imageUrl: compressed } : null);
+                        
+                        if (scannedProduct.id) {
+                          setProductHistory(hist => hist.map(p => p.id === scannedProduct.id ? { ...p, imageUrl: compressed } : p));
+                          setFavorites(favs => favs.map(p => p.id === scannedProduct.id ? { ...p, imageUrl: compressed } : p));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
                   />
-                )}
+                </div>
                 <div className="min-w-0 flex-1">
                   <Input
                     value={tempName}
@@ -2645,6 +2806,19 @@ export default function App() {
                 >
                   Ajouter à l'historique uniquement
                 </Button>
+                {(scannedProduct as any).ingredients && (
+                  <Button
+                    variant="outline"
+                    className="w-full border-pink-200 text-pink-600 hover:bg-pink-50 rounded-2xl h-12 font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1"
+                    onClick={() => {
+                      setIsProductModalOpen(false);
+                      openRecipeForEdit(scannedProduct as any);
+                    }}
+                  >
+                    <ChefHat className="w-4 h-4" />
+                    Modifier la recette
+                  </Button>
+                )}
               </div>
             </div>
           )}
