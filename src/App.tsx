@@ -1675,11 +1675,31 @@ export default function App() {
               </button>
             </motion.div>
 
-            {/* Activities Button */}
+            {/* Gemini AI Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.5 }}
+            >
+              <button
+                onClick={() => {
+                  setTempModalApiKey(geminiApiKey);
+                  setIsGeminiModalOpen(true);
+                }}
+                className="w-full h-16 bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-violet-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              >
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-violet-100" />
+                </div>
+                Estimer via Gemini AI
+              </button>
+            </motion.div>
+
+            {/* Activities Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.55 }}
             >
               <button
                 onClick={() => setIsActivityModalOpen(true)}
@@ -1709,26 +1729,6 @@ export default function App() {
                   <span>Poids actuel</span>
                   <span className="text-sm font-bold opacity-80">{profile.currentWeight} kg → objectif {profile.goalWeight} kg</span>
                 </div>
-              </button>
-            </motion.div>
-
-            {/* Gemini AI Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.65 }}
-            >
-              <button
-                onClick={() => {
-                  setTempModalApiKey(geminiApiKey);
-                  setIsGeminiModalOpen(true);
-                }}
-                className="w-full h-16 bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-violet-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-              >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-violet-100" />
-                </div>
-                Estimer via Gemini AI
               </button>
             </motion.div>
           </motion.main>
@@ -2472,7 +2472,7 @@ export default function App() {
               <div className="space-y-3 pt-4 border-t border-slate-100">
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Historique récent</h4>
                 <div className="grid grid-cols-1 gap-2">
-                  {productHistory.slice(0, 10).map((product, idx) => (
+                  {productHistory.map((product, idx) => (
                     <HistoryItem
                       key={product.id ? `scan-${product.id}` : `scan-name-${product.name}-${idx}`}
                       product={product}
@@ -2689,9 +2689,15 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Input
-                          type="number"
-                          value={ingredient.quantity}
-                          onChange={(e) => updateIngredientQuantity(ingredient.id, parseInt(e.target.value))}
+                          type="text"
+                          inputMode="decimal"
+                          value={ingredient.quantity === 0 ? '' : ingredient.quantity}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            let v = e.target.value.replace(',', '.');
+                            if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                            updateIngredientQuantity(ingredient.id, parseInt(v) || 0);
+                          }}
                           className="w-16 h-8 text-center rounded-lg border-slate-200 focus-visible:ring-pink-500 text-xs font-extrabold p-1"
                         />
                         <button
@@ -2819,7 +2825,7 @@ export default function App() {
               {/* Liste filtrée des aliments disponibles */}
               <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
                 {recipeFilteredHistory.length > 0 ? (
-                  recipeFilteredHistory.slice(0, 15).map((product, idx) => {
+                  recipeFilteredHistory.map((product, idx) => {
                     const isRecipeItem = !!product.ingredients || product.name.startsWith("[Recette]");
                     return (
                       <div
@@ -2980,7 +2986,12 @@ export default function App() {
                       type="text"
                       inputMode="decimal"
                       value={tempKcal === 0 ? '' : tempKcal}
-                      onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempKcal(v === '' ? '' : v); }}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(',', '.');
+                        if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                        setTempKcal(v === '' ? '' : v);
+                      }}
                       onBlur={(e) => { if (e.target.value === '') setTempKcal(0); }}
                       className="h-8 w-20 text-sm font-bold border-orange-200 focus:border-orange-500"
                     />
@@ -2994,15 +3005,51 @@ export default function App() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Dna className="w-3 h-3" /> Protéines</Label>
-                    <Input type="text" inputMode="decimal" value={tempProtein === 0 ? '' : tempProtein} onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempProtein(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }} className="h-10 rounded-xl border-blue-100 focus:border-blue-500" />
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={tempProtein === 0 ? '' : tempProtein}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(',', '.');
+                        if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                        setTempProtein(v === '' ? '' : v);
+                      }}
+                      onBlur={(e) => { if (e.target.value === '') setTempProtein(0); }}
+                      className="h-10 rounded-xl border-blue-100 focus:border-blue-500"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-yellow-700 flex items-center gap-1"><Wheat className="w-3 h-3" /> Glucides</Label>
-                    <Input type="text" inputMode="decimal" value={tempCarbs === 0 ? '' : tempCarbs} onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempCarbs(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }} className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500" />
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={tempCarbs === 0 ? '' : tempCarbs}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(',', '.');
+                        if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                        setTempCarbs(v === '' ? '' : v);
+                      }}
+                      onBlur={(e) => { if (e.target.value === '') setTempCarbs(0); }}
+                      className="h-10 rounded-xl border-yellow-100 focus:border-yellow-500"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Droplets className="w-3 h-3" /> Lipides</Label>
-                    <Input type="text" inputMode="decimal" value={tempFat === 0 ? '' : tempFat} onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempFat(v === '' ? '' : v); }} onBlur={(e) => { if (e.target.value === '') setTempFat(0); }} className="h-10 rounded-xl border-red-100 focus:border-red-500" />
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={tempFat === 0 ? '' : tempFat}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(',', '.');
+                        if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                        setTempFat(v === '' ? '' : v);
+                      }}
+                      onBlur={(e) => { if (e.target.value === '') setTempFat(0); }}
+                      className="h-10 rounded-xl border-red-100 focus:border-red-500"
+                    />
                   </div>
                 </div>
               </div>
@@ -3015,8 +3062,14 @@ export default function App() {
                       id="quantity"
                       type="text"
                       inputMode="decimal"
+                      autoFocus
                       value={tempQuantity === '' ? '' : tempQuantity}
-                      onChange={(e) => { const v = e.target.value.replace(',', '.'); setTempQuantity(v === '' ? '' : v); }}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(',', '.');
+                        if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                        setTempQuantity(v === '' ? '' : v);
+                      }}
                       onBlur={(e) => { if (e.target.value === '') setTempQuantity(100); }}
                       className="rounded-2xl h-12 text-lg font-bold pr-8 border-slate-200 focus:border-orange-500"
                     />
@@ -3053,9 +3106,15 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <Input
-                            type="number"
-                            value={ing.quantity}
-                            onChange={(e) => updateTempIngredientQuantity(ing.id, parseInt(e.target.value))}
+                            type="text"
+                            inputMode="decimal"
+                            value={ing.quantity === 0 ? '' : ing.quantity}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              let v = e.target.value.replace(',', '.');
+                              if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                              updateTempIngredientQuantity(ing.id, parseInt(v) || 0);
+                            }}
                             className="w-14 h-7 text-center rounded-lg border-slate-200 focus-visible:ring-pink-500 text-[10px] font-black p-1"
                           />
                           <span className="text-[10px] text-slate-400 font-medium">g</span>
@@ -3239,9 +3298,15 @@ export default function App() {
                             </div>
                             <div className="flex items-center gap-2 mt-1">
                               <Input
-                                type="number"
-                                value={product.quantityGrams}
-                                onChange={(e) => updateProductDetail(selectedMealForView, product.id, "quantityGrams", Number(e.target.value))}
+                                type="text"
+                                inputMode="decimal"
+                                value={product.quantityGrams === 0 ? '' : product.quantityGrams}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => {
+                                  let v = e.target.value.replace(',', '.');
+                                  if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                                  updateProductDetail(selectedMealForView, product.id, "quantityGrams", Number(v) || 0);
+                                }}
                                 className="h-7 w-16 text-xs px-1 rounded-md"
                               />
                               <span className="text-[10px] text-slate-400 font-medium">g</span>
@@ -3249,21 +3314,48 @@ export default function App() {
                             <div className="grid grid-cols-3 gap-1 mt-2">
                               <div className="space-y-1">
                                 <div className="text-[8px] text-blue-600 font-bold">Prot (100g)</div>
-                                <Input type="number" value={product.proteinPer100g}
-                                  onChange={(e) => updateProductDetail(selectedMealForView, product.id, "proteinPer100g", Number(e.target.value))}
-                                  className="h-6 text-[10px] px-1 rounded-md" />
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={product.proteinPer100g === 0 ? '' : product.proteinPer100g}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    let v = e.target.value.replace(',', '.');
+                                    if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                                    updateProductDetail(selectedMealForView, product.id, "proteinPer100g", Number(v) || 0);
+                                  }}
+                                  className="h-6 text-[10px] px-1 rounded-md"
+                                />
                               </div>
                               <div className="space-y-1">
                                 <div className="text-[8px] text-yellow-700 font-bold">Gluc (100g)</div>
-                                <Input type="number" value={product.carbsPer100g}
-                                  onChange={(e) => updateProductDetail(selectedMealForView, product.id, "carbsPer100g", Number(e.target.value))}
-                                  className="h-6 text-[10px] px-1 rounded-md" />
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={product.carbsPer100g === 0 ? '' : product.carbsPer100g}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    let v = e.target.value.replace(',', '.');
+                                    if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                                    updateProductDetail(selectedMealForView, product.id, "carbsPer100g", Number(v) || 0);
+                                  }}
+                                  className="h-6 text-[10px] px-1 rounded-md"
+                                />
                               </div>
                               <div className="space-y-1">
                                 <div className="text-[8px] text-red-600 font-bold">Lip (100g)</div>
-                                <Input type="number" value={product.fatPer100g}
-                                  onChange={(e) => updateProductDetail(selectedMealForView, product.id, "fatPer100g", Number(e.target.value))}
-                                  className="h-6 text-[10px] px-1 rounded-md" />
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={product.fatPer100g === 0 ? '' : product.fatPer100g}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    let v = e.target.value.replace(',', '.');
+                                    if (/^0[0-9]/.test(v)) v = v.replace(/^0+/, '');
+                                    updateProductDetail(selectedMealForView, product.id, "fatPer100g", Number(v) || 0);
+                                  }}
+                                  className="h-6 text-[10px] px-1 rounded-md"
+                                />
                               </div>
                             </div>
                           </div>
