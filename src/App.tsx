@@ -52,6 +52,7 @@ import {
   ChefHat,
   Utensils,
   Pencil,
+  Cpu,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,7 +61,7 @@ import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
-  DialogTitle,
+  DialogTitle, 
   DialogDescription
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Scanner, ScannerHandle } from "@/components/Scanner";
 import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct, UnifiedProduct } from "@/services/foodService";
+
+export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
+
+export const GEMINI_SUGGESTED_MODELS = [
+  { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash", tag: "Recommandé (Dernière version)" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", tag: "Flash intermédiaire" },
+  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", tag: "Stable" },
+  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash", tag: "Compatibilité maximale Free Tier" }
+];
 
 interface LoggedProduct {
   id: string;
@@ -456,10 +466,19 @@ export default function App() {
   const [geminiFat, setGeminiFat] = useState<string | number>("");
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("calo_gemini_api_key") || "");
   const [tempModalApiKey, setTempModalApiKey] = useState("");
+  const [geminiModel, setGeminiModel] = useState<string>(() => {
+    const saved = localStorage.getItem("calo_gemini_model");
+    if (!saved || saved === "gemini-2.5-flash") return DEFAULT_GEMINI_MODEL;
+    return saved;
+  });
 
   useEffect(() => {
     localStorage.setItem("calo_gemini_api_key", geminiApiKey);
   }, [geminiApiKey]);
+
+  useEffect(() => {
+    localStorage.setItem("calo_gemini_model", geminiModel);
+  }, [geminiModel]);
 
   const [tempWeightInput, setTempWeightInput] = useState<number | string>("");
   const [tempWeightDate, setTempWeightDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -524,70 +543,116 @@ export default function App() {
     setIsGeminiLoading(true);
     setGeminiError(null);
     try {
-      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+      // Optimiser l'image pour le réseau et respecter les quotas Free Tier de Google
+      const optimizedBase64 = await compressAndResizeImage(base64Image, 1024, 1024);
+      const base64Data = optimizedBase64.replace(/^data:image\/\w+;base64,/, "");
       let result;
+
+      const activeModel = geminiModel.trim() || DEFAULT_GEMINI_MODEL;
 
       if (geminiApiKey) {
         // Direct client-side fetch to official Google Gemini API (fully supports GitHub Pages/Static deployment!)
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    inlineData: {
-                      mimeType: "image/jpeg",
-                      data: base64Data
-                    }
-                  },
-                  {
-                    text: "Analyze this food image. Identify the food item and estimate its nutritional values. " +
-                          "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
-                          "The JSON keys MUST be exactly: " +
-                          "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
-                          "'estimatedWeight' (number, the portion weight in grams), " +
-                          "'kcalPer100g' (number, calories per 100g of this item), " +
-                          "'proteinPer100g' (number, proteins in grams per 100g), " +
-                          "'carbsPer100g' (number, carbohydrates in grams per 100g), " +
-                          "'fatPer100g' (number, fats/lipids in grams per 100g)."
+        const promptText = 
+          "Analyze this food image. Identify the food item and estimate its nutritional values. " +
+          "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
+          "The JSON keys MUST be exactly: " +
+          "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
+          "'estimatedWeight' (number, the portion weight in grams), " +
+          "'kcalPer100g' (number, calories per 100g of this item), " +
+          "'proteinPer100g' (number, proteins in grams per 100g), " +
+          "'carbsPer100g' (number, carbohydrates in grams per 100g), " +
+          "'fatPer100g' (number, fats/lipids in grams per 100g).";
+
+        const requestBody = {
+          contents: [
+            {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: base64Data
                   }
-                ]
-              }
-            ],
-            generationConfig: {
-              responseMimeType: "application/json"
+                },
+                {
+                  text: promptText
+                }
+              ]
             }
-          })
-        });
+          ],
+          generationConfig: {
+            responseMimeType: "application/json"
+          }
+        };
 
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error?.message || `Erreur de l'API Gemini (${response.status})`);
+        // Modèles candidats en cas d'incompatibilité ou 404 (Free Tier de Google AI Studio)
+        const modelsToTry = Array.from(new Set([
+          activeModel,
+          DEFAULT_GEMINI_MODEL,
+          "gemini-2.5-flash",
+          "gemini-2.0-flash",
+          "gemini-1.5-flash"
+        ]));
+
+        let lastErrorMsg = "";
+        let succeeded = false;
+
+        for (const currentModel of modelsToTry) {
+          try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+              const errData = await response.json().catch(() => ({}));
+              const msg = errData.error?.message || `Erreur (${response.status})`;
+              if (response.status === 404 || msg.toLowerCase().includes("not found")) {
+                console.warn(`Modèle ${currentModel} non disponible (404), tentative avec le modèle suivant...`);
+                lastErrorMsg = msg;
+                continue;
+              }
+              throw new Error(msg);
+            }
+
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) {
+              throw new Error("L'API Gemini a retourné une réponse vide.");
+            }
+
+            let cleanJson = text.trim();
+            if (cleanJson.startsWith("```")) {
+              cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+            }
+            result = JSON.parse(cleanJson);
+            succeeded = true;
+            if (currentModel !== activeModel) {
+              setGeminiModel(currentModel);
+            }
+            break;
+          } catch (fetchErr: any) {
+            lastErrorMsg = fetchErr.message || "Erreur lors de la requête";
+            if (!fetchErr.message?.includes("404") && !fetchErr.message?.toLowerCase().includes("not found")) {
+              throw fetchErr;
+            }
+          }
         }
 
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) {
-          throw new Error("L'API Gemini a retourné une réponse vide.");
+        if (!succeeded) {
+          throw new Error(lastErrorMsg || "Impossible de contacter l'API Gemini avec les modèles disponibles.");
         }
-
-        let cleanJson = text.trim();
-        if (cleanJson.startsWith("```")) {
-          cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-        }
-        result = JSON.parse(cleanJson);
       } else {
         // Fallback to Express backend if no local key (only works if fully-fledged server is deployed)
         const response = await fetch("/api/food/analyze-image", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-gemini-model": activeModel
           },
-          body: JSON.stringify({ image: base64Image })
+          body: JSON.stringify({ image: optimizedBase64, model: activeModel })
         });
 
         const data = await response.json();
@@ -2169,6 +2234,58 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-violet-600" />
+                    Modèle Gemini utilisé
+                  </Label>
+                  <span className="text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
+                    {geminiModel}
+                  </span>
+                </div>
+
+                {/* Raccourcis modèles suggérés */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {GEMINI_SUGGESTED_MODELS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setGeminiModel(m.id)}
+                      className={cn(
+                        "text-left p-2 rounded-xl border text-xs transition-all flex flex-col gap-0.5",
+                        geminiModel === m.id
+                          ? "border-violet-500 bg-violet-50/70 text-violet-900 font-bold shadow-xs"
+                          : "border-slate-200 hover:border-slate-300 text-slate-600 bg-white"
+                      )}
+                    >
+                      <span className="text-[11px] leading-tight font-semibold flex items-center justify-between">
+                        {m.id}
+                        {m.id === DEFAULT_GEMINI_MODEL && (
+                          <span className="text-[8px] bg-violet-200 text-violet-800 px-1 rounded">Défaut</span>
+                        )}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-tight">{m.tag}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Saisie manuelle d'un nom de modèle personnalisé */}
+                <div className="space-y-1 pt-1">
+                  <Label className="text-[10px] text-slate-400">Nom du modèle (personnalisé si Google évolue)</Label>
+                  <Input
+                    type="text"
+                    placeholder="gemini-3.6-flash"
+                    value={geminiModel}
+                    onChange={(e) => setGeminiModel(e.target.value.trim())}
+                    className="rounded-xl font-mono text-xs border-slate-200 focus-visible:ring-violet-500 h-9"
+                  />
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    ✨ Compatible avec les clés gratuites (Free Tier Google AI Studio). Repli automatique assuré en cas d'indisponibilité.
+                  </p>
+                </div>
+              </div>
             </Card>
 
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
@@ -3673,6 +3790,36 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                      <Cpu className="w-3.5 h-3.5 text-violet-600" />
+                      Modèle IA (Défaut : {DEFAULT_GEMINI_MODEL})
+                    </Label>
+                    <span className="text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
+                      {geminiModel}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {GEMINI_SUGGESTED_MODELS.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setGeminiModel(m.id)}
+                        className={cn(
+                          "text-left p-1.5 rounded-xl border text-[10px] transition-all",
+                          geminiModel === m.id
+                            ? "border-violet-500 bg-violet-100/60 text-violet-900 font-bold"
+                            : "border-slate-200 text-slate-600 bg-white"
+                        )}
+                      >
+                        <span className="font-bold block">{m.id}</span>
+                        <span className="text-[8.5px] text-slate-400">{m.tag}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <Button 
                   onClick={() => {
                     if (tempModalApiKey.trim()) {
@@ -3688,6 +3835,25 @@ export default function App() {
               </div>
             ) : (
               <>
+                {!geminiImage && !isGeminiLoading && !geminiError && (
+                  <div className="flex items-center justify-between bg-violet-50/70 border border-violet-100 rounded-2xl px-3 py-2 mb-3 text-xs">
+                    <div className="flex items-center gap-1.5 text-violet-800 font-medium">
+                      <Cpu className="w-3.5 h-3.5 text-violet-600" />
+                      <span className="text-[11px] text-slate-500">Modèle :</span>
+                      <span className="font-bold text-violet-900 text-[11px]">{geminiModel}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsGeminiModalOpen(false);
+                        setView("profile");
+                      }}
+                      className="text-[10px] font-bold text-violet-600 hover:text-violet-800 hover:underline bg-white px-2 py-0.5 rounded-lg border border-violet-200 shadow-2xs"
+                    >
+                      Changer
+                    </button>
+                  </div>
+                )}
                 {!geminiImage && !isGeminiLoading && !geminiError && (
               <div 
                 onClick={() => document.getElementById('gemini-image-input')?.click()}

@@ -101,7 +101,7 @@ async function startServer() {
 
   // API for Gemini AI Multimodal Food Analysis
   app.post("/api/food/analyze-image", async (req, res) => {
-    const { image } = req.body;
+    const { image, model: reqModel } = req.body;
     if (!image) {
       return res.status(400).json({ error: "Aucune donnée d'image reçue." });
     }
@@ -115,37 +115,68 @@ async function startServer() {
       return res.status(400).json({ error: "Clé API Gemini manquante. Veuillez en configurer une dans les paramètres de l'application." });
     }
 
+    const customModelHeader = req.headers["x-gemini-model"];
+    const preferredModel = (typeof customModelHeader === "string" && customModelHeader.trim())
+      || (typeof reqModel === "string" && reqModel.trim())
+      || process.env.GEMINI_MODEL
+      || "gemini-3.6-flash";
+
+    const candidateModels = Array.from(new Set([
+      preferredModel,
+      "gemini-3.6-flash",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash"
+    ]));
+
     try {
       const ai = new GoogleGenAI({ apiKey });
       const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: base64Data
-            }
-          },
-          "Analyze this food image. Identify the food item and estimate its nutritional values. " +
-          "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
-          "The JSON keys MUST be exactly: " +
-          "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
-          "'estimatedWeight' (number, the estimated portion weight in grams), " +
-          "'kcalPer100g' (number, estimated calories per 100g of this item), " +
-          "'proteinPer100g' (number, estimated proteins in grams per 100g), " +
-          "'carbsPer100g' (number, estimated carbohydrates in grams per 100g), " +
-          "'fatPer100g' (number, estimated fats/lipids in grams per 100g)."
-        ],
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
+      const promptText = 
+        "Analyze this food image. Identify the food item and estimate its nutritional values. " +
+        "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
+        "The JSON keys MUST be exactly: " +
+        "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
+        "'estimatedWeight' (number, the estimated portion weight in grams), " +
+        "'kcalPer100g' (number, estimated calories per 100g of this item), " +
+        "'proteinPer100g' (number, estimated proteins in grams per 100g), " +
+        "'carbsPer100g' (number, estimated carbohydrates in grams per 100g), " +
+        "'fatPer100g' (number, estimated fats/lipids in grams per 100g).";
 
-      const text = response.text;
+      let lastError: any = null;
+      let text = "";
+
+      for (const modelToTry of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelToTry,
+            contents: [
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: base64Data
+                }
+              },
+              promptText
+            ],
+            config: {
+              responseMimeType: "application/json"
+            }
+          });
+
+          if (response.text) {
+            text = response.text;
+            break;
+          }
+        } catch (modelErr: any) {
+          lastError = modelErr;
+          console.warn(`Modèle ${modelToTry} non disponible ou erreur, essai du suivant...`, modelErr?.message || modelErr);
+        }
+      }
+
       if (!text) {
-        throw new Error("L'API Gemini a retourné une réponse vide.");
+        throw lastError || new Error("L'API Gemini a retourné une réponse vide.");
       }
 
       // Cleanup markdown if Gemini wrapped it anyway
