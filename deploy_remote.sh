@@ -9,6 +9,7 @@ echo "📦 [1/2] Synchronisation vers le Mac M1 ($REMOTE_DIR)..."
 rsync -avz \
     --exclude '.git' \
     --exclude 'node_modules' \
+    --exclude 'data' \
     "$LOCAL_DIR/" "$REMOTE_HOST:$REMOTE_DIR/"
 
 echo "🐳 [2/2] Rechargement du conteneur CaloTrack KCAL sur OrbStack..."

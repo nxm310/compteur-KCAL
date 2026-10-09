@@ -8,6 +8,8 @@ services:
     environment:
       - PORT=5003
       - NODE_ENV=production
+    volumes:
+      - ./data:/app/data
     labels:
       - "gethomepage.name=CaloTrack KCAL"
       - "gethomepage.description=Compteur de calories & suivi nutritionnel"

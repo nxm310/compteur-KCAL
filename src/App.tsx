@@ -822,6 +822,79 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<UnifiedProduct[]>([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [showUpdateAvailable, setShowUpdateAvailable] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"synced" | "saving" | "offline">("synced");
+  const isInitialSyncDone = useRef(false);
+
+  // Sync to Mac Mini M1 Server
+  const saveToServer = useCallback(async (customPayload?: any) => {
+    try {
+      setSyncStatus("saving");
+      const payload = customPayload || {
+        profile,
+        mealsByDate,
+        activitiesByDate,
+        favorites,
+        productHistory,
+        weightHistory,
+        geminiApiKey,
+        geminiModel,
+      };
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setSyncStatus("synced");
+      } else {
+        setSyncStatus("offline");
+      }
+    } catch {
+      setSyncStatus("offline");
+    }
+  }, [profile, mealsByDate, activitiesByDate, favorites, productHistory, weightHistory, geminiApiKey, geminiModel]);
+
+  // Initial load from server on mount
+  useEffect(() => {
+    async function loadServerData() {
+      try {
+        const res = await fetch("/api/sync");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.exists !== false) {
+            if (data.profile) setProfile(data.profile);
+            if (data.mealsByDate) setMealsByDate(data.mealsByDate);
+            if (data.activitiesByDate) setActivitiesByDate(data.activitiesByDate);
+            if (data.favorites) setFavorites(data.favorites);
+            if (data.productHistory) setProductHistory(data.productHistory);
+            if (data.weightHistory) setWeightHistory(data.weightHistory);
+            if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
+            if (data.geminiModel) setGeminiModel(data.geminiModel);
+            setSyncStatus("synced");
+          } else {
+            saveToServer();
+          }
+        } else {
+          setSyncStatus("offline");
+        }
+      } catch (err) {
+        console.warn("Server sync unreachable:", err);
+        setSyncStatus("offline");
+      } finally {
+        isInitialSyncDone.current = true;
+      }
+    }
+    loadServerData();
+  }, [saveToServer]);
+
+  // Auto-sync debounced on state changes
+  useEffect(() => {
+    if (!isInitialSyncDone.current) return;
+    const timer = setTimeout(() => {
+      saveToServer();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [profile, mealsByDate, activitiesByDate, favorites, productHistory, weightHistory, geminiApiKey, geminiModel, saveToServer]);
 
   useEffect(() => {
     const handler = () => setShowUpdateAvailable(true);
@@ -1503,6 +1576,25 @@ export default function App() {
             <h1 className="text-xl font-extrabold tracking-tight text-slate-900">
               {view === "dashboard" ? "Tableau de Bord" : "Profil & Objectifs"}
             </h1>
+            <div className="flex items-center justify-center gap-1.5 mt-1">
+              {syncStatus === "synced" && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Mac M1 connecté
+                </span>
+              )}
+              {syncStatus === "saving" && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                  Sauvegarde Mac...
+                </span>
+              )}
+              {syncStatus === "offline" && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  Mode local
+                </span>
+              )}
+            </div>
             {view === "dashboard" && (
               <div className="flex items-center justify-center gap-2 mt-3">
                 <Button

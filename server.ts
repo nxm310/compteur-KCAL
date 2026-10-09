@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import "dotenv/config";
 import { GoogleGenAI } from "@google/genai";
@@ -200,6 +201,47 @@ async function startServer() {
       res.json(versionData);
     } catch (error) {
       res.status(500).json({ version: "unknown" });
+    }
+  });
+
+  // Centralized Server Storage & Synchronization
+  const DATA_DIR = path.join(process.cwd(), "data");
+  const DATA_FILE = path.join(DATA_DIR, "calotrack.json");
+
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  app.get("/api/sync", (req, res) => {
+    try {
+      if (fs.existsSync(DATA_FILE)) {
+        const raw = fs.readFileSync(DATA_FILE, "utf-8");
+        return res.json(JSON.parse(raw));
+      }
+      return res.json({ exists: false });
+    } catch (error) {
+      console.error("Error reading sync data:", error);
+      res.status(500).json({ error: "Failed to read sync data" });
+    }
+  });
+
+  app.post("/api/sync", (req, res) => {
+    try {
+      const data = req.body;
+      if (!data || typeof data !== "object") {
+        return res.status(400).json({ error: "Invalid data payload" });
+      }
+      const payload = {
+        ...data,
+        updatedAt: new Date().toISOString()
+      };
+      const tmpFile = `${DATA_FILE}.tmp`;
+      fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), "utf-8");
+      fs.renameSync(tmpFile, DATA_FILE);
+      res.json({ success: true, updatedAt: payload.updatedAt });
+    } catch (error) {
+      console.error("Error saving sync data:", error);
+      res.status(500).json({ error: "Failed to save sync data" });
     }
   });
 
