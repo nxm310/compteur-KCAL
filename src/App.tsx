@@ -1413,24 +1413,52 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const backup = JSON.parse(ev.target?.result as string);
-        if (!backup.version) throw new Error("Fichier invalide");
-        const KEYS = ["calo_profile_v2", "calo_meals_v2", "calo_activities_v2", "calo_history_v2", "calo_favorites_v2"];
-        KEYS.forEach((k) => {
-          if (backup[k] !== null && backup[k] !== undefined) {
-            localStorage.setItem(k, JSON.stringify(backup[k]));
-          }
-        });
+        if (!backup || typeof backup !== "object") throw new Error("Fichier invalide");
+
+        const extractedProfile = backup.calo_profile_v2 || backup.profile || null;
+        const extractedMeals = backup.calo_meals_v2 || backup.mealsByDate || backup.meals || null;
+        const extractedActivities = backup.calo_activities_v2 || backup.activitiesByDate || backup.activities || null;
+        const extractedHistory = backup.calo_history_v2 || backup.productHistory || backup.history || null;
+        const extractedFavorites = backup.calo_favorites_v2 || backup.favorites || null;
+        const extractedWeights = backup.calo_weight_history_v1 || backup.weightHistory || null;
+
+        if (extractedProfile) localStorage.setItem("calo_profile_v2", JSON.stringify(extractedProfile));
+        if (extractedMeals) localStorage.setItem("calo_meals_v2", JSON.stringify(extractedMeals));
+        if (extractedActivities) localStorage.setItem("calo_activities_v2", JSON.stringify(extractedActivities));
+        if (extractedHistory) localStorage.setItem("calo_history_v2", JSON.stringify(extractedHistory));
+        if (extractedFavorites) localStorage.setItem("calo_favorites_v2", JSON.stringify(extractedFavorites));
+        if (extractedWeights) localStorage.setItem("calo_weight_history_v1", JSON.stringify(extractedWeights));
+
+        // Envoi direct au serveur sur le Mac Mini M1
+        const serverPayload = {
+          profile: extractedProfile || profile,
+          mealsByDate: extractedMeals || mealsByDate,
+          activitiesByDate: extractedActivities || activitiesByDate,
+          favorites: extractedFavorites || favorites,
+          productHistory: extractedHistory || productHistory,
+          weightHistory: extractedWeights || weightHistory,
+          geminiApiKey,
+          geminiModel,
+        };
+
+        await fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(serverPayload),
+        }).catch(err => console.warn("Sync to Mac error:", err));
+
         window.location.reload();
-      } catch {
+      } catch (err) {
+        console.error("Import error:", err);
         alert("Fichier de sauvegarde invalide ou corrompu.");
       }
     };
     reader.readAsText(file);
     e.target.value = "";
-  }, []);
+  }, [profile, mealsByDate, activitiesByDate, favorites, productHistory, weightHistory, geminiApiKey, geminiModel]);
 
   // ─── History item card (réutilisé dans 2 dialogs) ────────────────────────
   const HistoryItem = ({ product, onOpen, showMealButtons = false, mealIdx }: {
