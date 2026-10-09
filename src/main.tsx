@@ -5,7 +5,7 @@ import './index.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/compteur-KCAL/sw.js').then((reg) => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
 
       setInterval(() => reg.update(), 60000);
 

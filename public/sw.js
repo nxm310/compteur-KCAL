@@ -1,5 +1,5 @@
 const CACHE_NAME = 'kcal-v' + Date.now();
-const urlsToCache = ['/compteur-KCAL/'];
+const urlsToCache = ['/'];
 
 // Domaines externes à ne JAMAIS intercepter
 const EXTERNAL_HOSTS = [
