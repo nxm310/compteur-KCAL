@@ -1,0 +1,17 @@
+services:
+  compteur-kcal:
+    build: .
+    container_name: compteur-kcal
+    restart: unless-stopped
+    ports:
+      - "5003:5003"
+    environment:
+      - PORT=5003
+      - NODE_ENV=production
+    labels:
+      - "gethomepage.name=CaloTrack KCAL"
+      - "gethomepage.description=Compteur de calories & suivi nutritionnel"
+      - "gethomepage.group=Santé & Forme"
+      - "gethomepage.icon=http://192.168.50.174:5003/kcal-logo.svg"
+      - "gethomepage.href=http://192.168.50.174:5003"
+      - "gethomepage.ping=http://192.168.50.174:5003"
