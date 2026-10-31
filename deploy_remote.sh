@@ -2,7 +2,7 @@
 set -e
 
 REMOTE_HOST="mac-m1"
-REMOTE_DIR="/Users/goldohrack/docker/compteur-kcal"
+REMOTE_DIR="/Users/macminim1/docker/compteur-kcal"
 LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🔨 [1/3] Compilation du frontend (Vite)..."
