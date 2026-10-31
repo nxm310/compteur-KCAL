@@ -5,7 +5,8 @@ import './index.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then((reg) => {
+    const swPath = './sw.js';
+    navigator.serviceWorker.register(swPath).then((reg) => {
 
       setInterval(() => reg.update(), 60000);
 
