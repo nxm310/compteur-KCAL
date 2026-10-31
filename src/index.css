@@ -49,6 +49,35 @@
 }
 
 :root {
+    --surface-canvas-light: #f8fafc;
+    --surface-canvas-dark: #090d16;
+    --surface-card-light: #ffffff;
+    --surface-card-dark: #111827;
+
+    --surface-canvas: var(--surface-canvas-light);
+    --surface-card: var(--surface-card-light);
+
+    @media (prefers-color-scheme: dark) {
+      --surface-canvas: var(--surface-canvas-dark);
+      --surface-card: var(--surface-card-dark);
+    }
+
+    --surface-canvas: light-dark(var(--surface-canvas-light), var(--surface-canvas-dark));
+    --surface-card: light-dark(var(--surface-card-light), var(--surface-card-dark));
+
+    color-scheme: light dark;
+
+    &:has(> head > meta[name="color-scheme"][content="dark"]) {
+      color-scheme: dark;
+      --surface-canvas: var(--surface-canvas-dark);
+      --surface-card: var(--surface-card-dark);
+    }
+    &:has(> head > meta[name="color-scheme"][content="light"]) {
+      color-scheme: light;
+      --surface-canvas: var(--surface-canvas-light);
+      --surface-card: var(--surface-card-light);
+    }
+
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -84,22 +113,22 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    --background: oklch(0.145 0.015 255);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
+    --card: oklch(0.19 0.02 255);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
+    --popover: oklch(0.19 0.02 255);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.922 0 0);
     --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
+    --secondary: oklch(0.25 0.02 255);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
+    --muted: oklch(0.25 0.02 255);
     --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
+    --accent: oklch(0.25 0.02 255);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
+    --border: oklch(1 0 0 / 12%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
     --chart-1: oklch(0.87 0 0);
@@ -107,13 +136,13 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
+    --sidebar: oklch(0.19 0.02 255);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent: oklch(0.25 0.02 255);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-border: oklch(1 0 0 / 12%);
     --sidebar-ring: oklch(0.556 0 0);
 }
 
@@ -129,11 +158,61 @@
     padding: 0;
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--surface-canvas);
+    @apply text-foreground transition-colors duration-200;
   }
   html {
     @apply font-sans;
   }
+}
+
+/* Harmonisation globale du mode Nuit (.dark) pour toutes les surfaces */
+.dark .bg-slate-50 {
+  background-color: #0b1120 !important;
+}
+.dark .bg-slate-50\/50 {
+  background-color: rgba(15, 23, 42, 0.65) !important;
+}
+.dark .bg-white {
+  background-color: #131c31 !important;
+}
+.dark .bg-white\/80,
+.dark .bg-white\/90 {
+  background-color: rgba(19, 28, 49, 0.88) !important;
+}
+.dark .bg-slate-100 {
+  background-color: #1e293b !important;
+}
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: #f8fafc !important;
+}
+.dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-200\/80 {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+.dark .shadow-xl,
+.dark .shadow-lg {
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5) !important;
+}
+.dark .from-white {
+  --tw-gradient-from: #131c31 !important;
+}
+.dark .via-white {
+  --tw-gradient-via: #162038 !important;
+}
+.dark .to-indigo-50\/50 {
+  --tw-gradient-to: rgba(30, 41, 59, 0.8) !important;
 }
 
 .no-scrollbar::-webkit-scrollbar {

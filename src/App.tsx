@@ -53,6 +53,8 @@ import {
   Utensils,
   Pencil,
   Cpu,
+  Camera,
+  Settings,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,14 +73,21 @@ import { cn } from "@/lib/utils";
 import { Scanner, ScannerHandle } from "@/components/Scanner";
 import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct, UnifiedProduct } from "@/services/foodService";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 
 export const GEMINI_SUGGESTED_MODELS = [
-  { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash", tag: "Recommandé (Dernière version)" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", tag: "Flash intermédiaire" },
-  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", tag: "Stable" },
-  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash", tag: "Compatibilité maximale Free Tier" }
+  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tag: "Recommandé · Multimodal rapide & précis" },
+  { id: "gemini-4-argon", label: "Gemini 4 Argon", tag: "Puissance maximale · Raisonnement avancé" },
+  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite", tag: "Ultra-rapide & léger" },
+  { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite", tag: "Économique & haute fréquence" }
 ];
+
+const LEGACY_GEMINI_MODELS = new Set([
+  "gemini-3.6-flash",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+]);
 
 interface LoggedProduct {
   id: string;
@@ -468,9 +477,76 @@ export default function App() {
   const [tempModalApiKey, setTempModalApiKey] = useState("");
   const [geminiModel, setGeminiModel] = useState<string>(() => {
     const saved = localStorage.getItem("calo_gemini_model");
-    if (!saved || saved === "gemini-2.5-flash") return DEFAULT_GEMINI_MODEL;
+    if (!saved || LEGACY_GEMINI_MODELS.has(saved)) return DEFAULT_GEMINI_MODEL;
     return saved;
   });
+
+  // ─── Mode Jour / Nuit (Dark Mode) conforme aux standards Web modernes ──────
+  const [themeOverride, setThemeOverride] = useState<"light" | "dark" | null>(() => {
+    try {
+      const saved = localStorage.getItem("color-scheme");
+      return saved === "light" || saved === "dark" ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  const [systemDark, setSystemDark] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false
+  );
+
+  const isDarkMode = themeOverride ? themeOverride === "dark" : systemDark;
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "color-scheme") {
+        setThemeOverride(e.newValue === "light" || e.newValue === "dark" ? e.newValue : null);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      mq.removeEventListener("change", onChange);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="color-scheme"]') as HTMLMetaElement | null;
+    if (meta) {
+      meta.content = themeOverride ?? "light dark";
+    }
+    document.documentElement.classList.toggle("dark", isDarkMode);
+  }, [themeOverride, isDarkMode]);
+
+  const toggleDarkMode = useCallback(() => {
+    const target: "light" | "dark" = isDarkMode ? "light" : "dark";
+    const sysCurrent: "light" | "dark" = systemDark ? "dark" : "light";
+    try {
+      if (target === sysCurrent) {
+        localStorage.removeItem("color-scheme");
+        setThemeOverride(null);
+      } else {
+        localStorage.setItem("color-scheme", target);
+        setThemeOverride(target);
+      }
+    } catch {
+      setThemeOverride(target === sysCurrent ? null : target);
+    }
+  }, [isDarkMode, systemDark]);
+
+  const setExplicitTheme = useCallback((mode: "light" | "dark" | null) => {
+    try {
+      if (mode === null) {
+        localStorage.removeItem("color-scheme");
+      } else {
+        localStorage.setItem("color-scheme", mode);
+      }
+    } catch {}
+    setThemeOverride(mode);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("calo_gemini_api_key", geminiApiKey);
@@ -584,13 +660,13 @@ export default function App() {
           }
         };
 
-        // Modèles candidats en cas d'incompatibilité ou 404 (Free Tier de Google AI Studio)
+        // Modèles actuels Gemini (3.8 Flash & 4 Argon)
         const modelsToTry = Array.from(new Set([
           activeModel,
           DEFAULT_GEMINI_MODEL,
-          "gemini-2.5-flash",
-          "gemini-2.0-flash",
-          "gemini-1.5-flash"
+          "gemini-4-argon",
+          "gemini-3.5-flash-lite",
+          "gemini-3.1-flash-lite"
         ]));
 
         let lastErrorMsg = "";
@@ -673,6 +749,107 @@ export default function App() {
       setGeminiError(error.message || "Une erreur est survenue lors de l'analyse de l'image.");
     } finally {
       setIsGeminiLoading(false);
+    }
+  };
+
+  const [isAiTextEstimating, setIsAiTextEstimating] = useState(false);
+
+  const handleGeminiTextEstimate = async (queryText: string) => {
+    const cleanQuery = queryText.trim();
+    if (!cleanQuery) return;
+    if (!geminiApiKey) {
+      setIsSearchModalOpen(false);
+      setIsScannerOpen(false);
+      setTempModalApiKey("");
+      setIsGeminiModalOpen(true);
+      return;
+    }
+
+    setIsAiTextEstimating(true);
+    try {
+      const activeModel = geminiModel.trim() || DEFAULT_GEMINI_MODEL;
+      const promptText =
+        `Tu es un expert en nutrition française (table CIQUAL / ANSES). Analyse l'aliment ou le plat suivant : "${cleanQuery}". ` +
+        "Fournis une estimation nutritionnelle précise pour 100g ainsi que le poids moyen d'une portion normale. " +
+        "IMPORTANT: Réponds UNIQUEMENT avec un objet JSON brut valide (sans balises markdown) contenant exactement les clés : " +
+        "'name' (string, nom clair en français ex: 'Couscous Royal', 'Croissant aux amandes'), " +
+        "'estimatedWeight' (number, poids moyen d'une portion en grammes), " +
+        "'kcalPer100g' (number, calories pour 100g), " +
+        "'proteinPer100g' (number, protéines en g pour 100g), " +
+        "'carbsPer100g' (number, glucides en g pour 100g), " +
+        "'fatPer100g' (number, lipides en g pour 100g).";
+
+      const modelsToTry = Array.from(new Set([
+        activeModel,
+        DEFAULT_GEMINI_MODEL,
+        "gemini-4-argon",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite"
+      ]));
+
+      let result: any = null;
+      for (const currentModel of modelsToTry) {
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { responseMimeType: "application/json" }
+              })
+            }
+          );
+          if (!response.ok) continue;
+          const data = await response.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) continue;
+          const cleanJson = text.trim().replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+          result = JSON.parse(cleanJson);
+          if (result) break;
+        } catch {
+          // try next model
+        }
+      }
+
+      if (!result) {
+        const res = await fetch("/api/food/analyze-text", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-gemini-api-key": geminiApiKey,
+            "x-gemini-model": activeModel,
+          },
+          body: JSON.stringify({ query: cleanQuery, model: activeModel }),
+        });
+        if (res.ok) {
+          result = await res.json();
+        }
+      }
+
+      if (result) {
+        const aiProduct: UnifiedProduct = {
+          id: `ai-${Date.now()}`,
+          name: result.name || cleanQuery,
+          brand: `Estimé par Gemini IA (${activeModel})`,
+          kcalPer100g: Math.round(Number(result.kcalPer100g) || 0),
+          proteinsPer100g: Math.round((Number(result.proteinPer100g) || 0) * 10) / 10,
+          carbsPer100g: Math.round((Number(result.carbsPer100g) || 0) * 10) / 10,
+          fatPer100g: Math.round((Number(result.fatPer100g) || 0) * 10) / 10,
+          source: "IA",
+          servingQuantity: Math.round(Number(result.estimatedWeight) || 150),
+        };
+        setScannedProduct(aiProduct);
+        setTempQuantity(aiProduct.servingQuantity || 150);
+        setIsSearchModalOpen(false);
+        setIsScannerOpen(false);
+        setIsProductModalOpen(true);
+      }
+    } catch (err) {
+      console.error("Erreur estimation texte Gemini:", err);
+    } finally {
+      setIsAiTextEstimating(false);
     }
   };
 
@@ -821,24 +998,42 @@ export default function App() {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<UnifiedProduct[]>([]);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [quickSearchInput, setQuickSearchInput] = useState("");
+  const [lastSearchQuery, setLastSearchQuery] = useState("");
+  const [searchSourceFilter, setSearchSourceFilter] = useState<"ALL" | "CIQUAL" | "OFF">("ALL");
   const [showUpdateAvailable, setShowUpdateAvailable] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"synced" | "saving" | "offline">("synced");
   const isInitialSyncDone = useRef(false);
+
+  const stateRef = useRef({
+    profile,
+    mealsByDate,
+    activitiesByDate,
+    favorites,
+    productHistory,
+    weightHistory,
+    geminiApiKey,
+    geminiModel,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      profile,
+      mealsByDate,
+      activitiesByDate,
+      favorites,
+      productHistory,
+      weightHistory,
+      geminiApiKey,
+      geminiModel,
+    };
+  });
 
   // Sync to Mac Mini M1 Server
   const saveToServer = useCallback(async (customPayload?: any) => {
     try {
       setSyncStatus("saving");
-      const payload = customPayload || {
-        profile,
-        mealsByDate,
-        activitiesByDate,
-        favorites,
-        productHistory,
-        weightHistory,
-        geminiApiKey,
-        geminiModel,
-      };
+      const payload = customPayload || stateRef.current;
       const res = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -852,7 +1047,7 @@ export default function App() {
     } catch {
       setSyncStatus("offline");
     }
-  }, [profile, mealsByDate, activitiesByDate, favorites, productHistory, weightHistory, geminiApiKey, geminiModel]);
+  }, []);
 
   // Initial load from server on mount
   useEffect(() => {
@@ -869,7 +1064,11 @@ export default function App() {
             if (data.productHistory) setProductHistory(data.productHistory);
             if (data.weightHistory) setWeightHistory(data.weightHistory);
             if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
-            if (data.geminiModel) setGeminiModel(data.geminiModel);
+            if (data.geminiModel && !LEGACY_GEMINI_MODELS.has(data.geminiModel)) {
+              setGeminiModel(data.geminiModel);
+            } else {
+              setGeminiModel(DEFAULT_GEMINI_MODEL);
+            }
             setSyncStatus("synced");
           } else {
             saveToServer();
@@ -1184,16 +1383,23 @@ export default function App() {
   const remaining = profile.calorieGoal - totals.kcal + totalBurned;
   const progress = Math.min((totals.kcal / (profile.calorieGoal + totalBurned)) * 100, 100);
 
-  // ─── Scan success handler ─────────────────────────────────────────────────
+  // ─── Scan & Search handler ────────────────────────────────────────────────
   const handleScanSuccess = useCallback(async (input: string) => {
-    if (isLoading || isProductModalOpen) return;
+    const trimmed = input.trim();
+    if (!trimmed || isLoading) return;
     setIsLoading(true);
+    setTempName(trimmed);
+    setLastSearchQuery(trimmed);
+    setSearchSourceFilter("ALL");
+    const isBarcode = /^\d{6,14}$/.test(trimmed);
+
     try {
-      const result = await fetchNutritionData(input);
+      const result = await fetchNutritionData(trimmed);
       if (result.products && result.products.length > 0) {
-        if (result.products.length === 1) {
+        if (isBarcode && result.products.length === 1) {
           setScannedProduct(result.products[0]);
           setIsScannerOpen(false);
+          setIsSearchModalOpen(false);
           setIsProductModalOpen(true);
           setTempQuantity(result.products[0].servingQuantity || 100);
         } else {
@@ -1202,41 +1408,19 @@ export default function App() {
           setIsSearchModalOpen(true);
         }
       } else {
-        setTempName(input);
-        setScannedProduct({
-          id: Math.random().toString(),
-          name: input,
-          kcalPer100g: 0,
-          proteinsPer100g: 0,
-          carbsPer100g: 0,
-          fatPer100g: 0,
-          imageUrl: "",
-          source: 'OFF',
-          servingQuantity: 100
-        });
+        setSearchResults([]);
         setIsScannerOpen(false);
-        setIsProductModalOpen(true);
+        setIsSearchModalOpen(true);
       }
     } catch (error) {
       console.error("Erreur technique de recherche:", error);
-      setTempName(input);
-      setScannedProduct({
-        id: Math.random().toString(),
-        name: input,
-        kcalPer100g: 0,
-        proteinsPer100g: 0,
-        carbsPer100g: 0,
-        fatPer100g: 0,
-        imageUrl: "",
-        source: 'OFF',
-        servingQuantity: 100
-      });
+      setSearchResults([]);
       setIsScannerOpen(false);
-      setIsProductModalOpen(true);
+      setIsSearchModalOpen(true);
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, isProductModalOpen]);
+  }, [isLoading]);
 
   // ─── Open product modal from history item ─────────────────────────────────
   const openProductFromHistory = useCallback((product: LoggedProduct, mealIdx?: number) => {
@@ -1543,7 +1727,7 @@ export default function App() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-10">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-28 transition-colors duration-200">
       <AnimatePresence>
         {showUpdateAvailable && (
           <motion.div
@@ -1575,98 +1759,119 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
-      <header className="px-6 pt-8 pb-6 flex flex-col items-center relative bg-white border-b border-slate-100 sticky top-0 z-40 shadow-sm">
-        <div className="w-full flex justify-between items-center">
-          <div className="flex items-center">
-            {view === "dashboard" ? (
-              <Button
-                variant="secondary"
-                size="icon"
-                className="rounded-2xl w-14 h-14 bg-slate-50 border border-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-all"
-                onClick={() => setIsHistoryOpen(true)}
+      {/* Header ergonomique repensé */}
+      <header className="px-5 pt-5 pb-3.5 bg-white/90 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40 shadow-2xs transition-colors">
+        <div className="max-w-md mx-auto flex flex-col gap-3">
+          <div className="w-full flex justify-between items-center">
+            {/* Marque + Statut Synchronisation */}
+            <div
+              onClick={() => setView("dashboard")}
+              className="flex items-center gap-2.5 cursor-pointer group"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform">
+                <Flame className="w-5 h-5 fill-white/20" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-black tracking-tight text-slate-900 leading-none">
+                    CaloTrack
+                  </h1>
+                  {syncStatus === "synced" && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Mac M1
+                    </span>
+                  )}
+                  {syncStatus === "saving" && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                      Sync...
+                    </span>
+                  )}
+                  {syncStatus === "offline" && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-500/10 px-2 py-0.5 rounded-full border border-slate-500/20">
+                      Local
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
+                  {view === "dashboard" ? "Suivi nutritionnel intelligent" : "Profil, IA & Paramètres"}
+                </p>
+              </div>
+            </div>
+
+            {/* Actions rapides Header : Bascule Jour / Nuit */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleDarkMode}
+                title={isDarkMode ? "Passer en mode Jour (Clair)" : "Passer en mode Nuit (Sombre)"}
+                aria-label={isDarkMode ? "Passer en mode Jour" : "Passer en mode Nuit"}
+                className={cn(
+                  "h-10 px-3.5 rounded-2xl border text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95",
+                  isDarkMode
+                    ? "bg-indigo-500/15 border-indigo-400/30 text-indigo-300 hover:bg-indigo-500/25"
+                    : "bg-amber-50 border-amber-200/80 text-amber-700 hover:bg-amber-100/80"
+                )}
               >
-                <History className="w-6 h-6" />
-              </Button>
-            ) : (
+                {isDarkMode ? (
+                  <>
+                    <Moon className="w-4 h-4 text-indigo-400 fill-indigo-400/20" />
+                    <span>Nuit</span>
+                  </>
+                ) : (
+                  <>
+                    <Sun className="w-4 h-4 text-amber-500 fill-amber-500/20" />
+                    <span>Jour</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Barre de navigation de date (uniquement sur le Journal) */}
+          {view === "dashboard" && (
+            <div className="flex items-center justify-between bg-slate-50 px-2 py-1 rounded-2xl border border-slate-100">
               <Button
                 variant="ghost"
                 size="icon"
-                className="rounded-full"
-                onClick={() => setView("dashboard")}
+                className="h-7 w-7 rounded-xl text-slate-400 hover:text-orange-500 hover:bg-orange-500/10 transition-all"
+                onClick={() => setCurrentDate(subDays(currentDate, 1))}
               >
-                <ArrowLeft className="w-6 h-6" />
+                <ChevronLeft className="w-4 h-4" />
               </Button>
-            )}
-          </div>
-
-          <div className="text-center">
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">
-              {view === "dashboard" ? "Tableau de Bord" : "Profil & Objectifs"}
-            </h1>
-            <div className="flex items-center justify-center gap-1.5 mt-1">
-              {syncStatus === "synced" && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  Mac M1 connecté
-                </span>
-              )}
-              {syncStatus === "saving" && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                  Sauvegarde Mac...
-                </span>
-              )}
-              {syncStatus === "offline" && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                  Mode local
-                </span>
-              )}
-            </div>
-            {view === "dashboard" && (
-              <div className="flex items-center justify-center gap-2 mt-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-full text-slate-300 hover:text-orange-500 hover:bg-orange-50 transition-all"
-                  onClick={() => setCurrentDate(subDays(currentDate, 1))}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
+              <div className="flex items-center gap-2">
                 <button
-                  className="text-xs font-bold text-slate-400 hover:text-orange-600 transition-colors flex items-center gap-1.5 bg-slate-50 px-3 py-1 rounded-full border border-slate-100"
+                  className="text-xs font-extrabold text-slate-700 hover:text-orange-600 transition-colors flex items-center gap-1.5 px-2.5 py-1 rounded-xl"
                   onClick={() => setIsDatePickerOpen(true)}
                 >
-                  <CalendarIcon className="w-3 h-3" />
-                  {format(currentDate, "d MMMM yyyy", { locale: fr })}
+                  <CalendarIcon className="w-3.5 h-3.5 text-orange-500" />
+                  <span className="capitalize">
+                    {isSameDay(currentDate, new Date())
+                      ? `Aujourd'hui · ${format(currentDate, "d MMM", { locale: fr })}`
+                      : format(currentDate, "EEEE d MMMM yyyy", { locale: fr })}
+                  </span>
                 </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-full text-slate-300 hover:text-orange-500 hover:bg-orange-50 transition-all"
-                  onClick={() => setCurrentDate(addDays(currentDate, 1))}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
+                {!isSameDay(currentDate, new Date()) && (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentDate(new Date())}
+                    className="text-[10px] font-bold bg-orange-500/15 text-orange-600 px-2 py-0.5 rounded-lg hover:bg-orange-500/25 transition-colors"
+                  >
+                    Aujourd'hui
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-
-          <div className="flex items-center">
-            <Button
-              variant="secondary"
-              size="icon"
-              className={cn(
-                "rounded-2xl w-14 h-14 transition-all border",
-                view === "profile"
-                  ? "bg-indigo-500 text-white border-indigo-600 shadow-lg shadow-indigo-200"
-                  : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
-              )}
-              onClick={() => setView(view === "profile" ? "dashboard" : "profile")}
-            >
-              <User className="w-6 h-6" />
-            </Button>
-          </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-xl text-slate-400 hover:text-orange-500 hover:bg-orange-500/10 transition-all"
+                onClick={() => setCurrentDate(addDays(currentDate, 1))}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -1780,6 +1985,68 @@ export default function App() {
               </Card>
             </motion.div>
 
+            {/* Barre de Recherche Rapide & Scan (CIQUAL + Open Food Facts + IA) */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.1 }}
+              className="bg-white p-2.5 rounded-3xl shadow-md border border-slate-100"
+            >
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (quickSearchInput.trim()) {
+                    setActiveMealIndex(null);
+                    handleScanSuccess(quickSearchInput.trim());
+                    setQuickSearchInput("");
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input
+                    type="text"
+                    value={quickSearchInput}
+                    onChange={(e) => setQuickSearchInput(e.target.value)}
+                    placeholder="Rechercher un aliment (Banane, Poulet, Skyr...)"
+                    className="pl-10 pr-8 h-11 rounded-2xl border-slate-100 bg-slate-50 font-semibold text-xs sm:text-sm focus-visible:ring-orange-500"
+                  />
+                  {quickSearchInput && (
+                    <button
+                      type="button"
+                      onClick={() => setQuickSearchInput("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {quickSearchInput.trim() ? (
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-11 px-4 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs shadow-sm"
+                  >
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Chercher"}
+                  </Button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMealIndex(null);
+                      setIsScannerOpen(true);
+                    }}
+                    title="Scanner un code-barres"
+                    className="h-11 px-3.5 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm shadow-orange-500/20 transition-all active:scale-95"
+                  >
+                    <Scan className="w-4 h-4" />
+                    <span>Scan</span>
+                  </button>
+                )}
+              </form>
+            </motion.div>
+
             {/* Meal Grid */}
             <div className="grid grid-cols-2 gap-4">
               {meals.map((meal, index) => {
@@ -1807,7 +2074,7 @@ export default function App() {
                           <p className="text-2xl font-black text-slate-900 leading-tight">
                             {mealKcal.toFixed(1)} <span className="text-sm font-bold text-slate-500">kcal</span>
                           </p>
-                          <p className="text-sm font-bold text-slate-400">{meal.products.length} Food(s)</p>
+                          <p className="text-sm font-bold text-slate-400">{meal.products.length} aliment(s)</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -1816,33 +2083,34 @@ export default function App() {
               })}
             </div>
 
-            {/* Scan Button — inline, au-dessus des activités */}
+            {/* Grille d'actions rapides ergonomique (2x2) */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.45 }}
+              transition={{ duration: 0.4, delay: 0.35 }}
+              className="grid grid-cols-2 gap-3"
             >
+              {/* Gemini AI Photo */}
               <button
+                type="button"
                 onClick={() => {
-                  setActiveMealIndex(null);
-                  setIsScannerOpen(true);
+                  setTempModalApiKey(geminiApiKey);
+                  setIsGeminiModalOpen(true);
                 }}
-                className="w-full h-16 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-orange-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                className="p-4 bg-gradient-to-br from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-3xl font-extrabold text-sm shadow-lg shadow-violet-500/20 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
               >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-                  <Scan className="w-5 h-5" />
+                <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-5 h-5 text-violet-100" />
                 </div>
-                Scanner un produit
+                <div className="leading-tight">
+                  <span className="block font-black">Photo IA</span>
+                  <span className="text-[10px] font-semibold opacity-80">Gemini 3.8</span>
+                </div>
               </button>
-            </motion.div>
 
-            {/* Recipes Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.48 }}
-            >
+              {/* Mes recettes */}
               <button
+                type="button"
                 onClick={() => {
                   setRecipeName("");
                   setRecipeIngredients([]);
@@ -1851,68 +2119,48 @@ export default function App() {
                   setEditingRecipeId(null);
                   setIsRecipeModalOpen(true);
                 }}
-                className="w-full h-16 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-pink-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                className="p-4 bg-gradient-to-br from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white rounded-3xl font-extrabold text-sm shadow-lg shadow-pink-500/20 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
               >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
                   <ChefHat className="w-5 h-5" />
                 </div>
-                Mes recettes
-              </button>
-            </motion.div>
-
-            {/* Gemini AI Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.5 }}
-            >
-              <button
-                onClick={() => {
-                  setTempModalApiKey(geminiApiKey);
-                  setIsGeminiModalOpen(true);
-                }}
-                className="w-full h-16 bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-violet-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-              >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-violet-100" />
+                <div className="leading-tight">
+                  <span className="block font-black">Mes recettes</span>
+                  <span className="text-[10px] font-semibold opacity-80">{savedRecipes.length} plat(s)</span>
                 </div>
-                Estimer via Gemini AI
               </button>
-            </motion.div>
 
-            {/* Activities Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.55 }}
-            >
+              {/* Ajouter un exercice */}
               <button
+                type="button"
                 onClick={() => setIsActivityModalOpen(true)}
-                className="w-full h-16 bg-[#007AFF] hover:bg-blue-600 active:bg-blue-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-blue-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                className="p-4 bg-gradient-to-br from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 text-white rounded-3xl font-extrabold text-sm shadow-lg shadow-blue-500/20 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
               >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
                   <Footprints className="w-5 h-5" />
                 </div>
-                Ajouter un exercice
+                <div className="leading-tight">
+                  <span className="block font-black">Activités</span>
+                  <span className="text-[10px] font-semibold opacity-80">+{totalBurned.toFixed(0)} kcal</span>
+                </div>
               </button>
-            </motion.div>
 
-            {/* Weight Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.6 }}
-            >
+              {/* Poids actuel */}
               <button
-                onClick={() => { setTempWeightInput(profile.currentWeight); setTempWeightDate(format(new Date(), "yyyy-MM-dd")); setIsWeightModalOpen(true); }}
-                className="w-full h-16 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200/60 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                type="button"
+                onClick={() => {
+                  setTempWeightInput(profile.currentWeight);
+                  setTempWeightDate(format(new Date(), "yyyy-MM-dd"));
+                  setIsWeightModalOpen(true);
+                }}
+                className="p-4 bg-gradient-to-br from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-3xl font-extrabold text-sm shadow-lg shadow-emerald-500/20 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
               >
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
                   <Scale className="w-5 h-5" />
                 </div>
-                <div className="flex flex-col items-start leading-tight">
-                  <span>Poids actuel</span>
-                  <span className="text-sm font-bold opacity-80">{profile.currentWeight} kg → objectif {profile.goalWeight} kg</span>
+                <div className="leading-tight">
+                  <span className="block font-black">{profile.currentWeight} kg</span>
+                  <span className="text-[10px] font-semibold opacity-80">Obj. {profile.goalWeight} kg</span>
                 </div>
               </button>
             </motion.div>
@@ -1925,6 +2173,44 @@ export default function App() {
             exit={{ opacity: 0, x: -20 }}
             className="px-6 space-y-6 max-w-md mx-auto mt-6"
           >
+            {/* ─── Apparence : Mode Jour / Nuit / Système ───────────────────── */}
+            <Card className="border-none shadow-xl rounded-3xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                  {isDarkMode ? (
+                    <Moon className="w-4 h-4 text-indigo-400" />
+                  ) : (
+                    <Sun className="w-4 h-4 text-amber-500" />
+                  )}
+                  Apparence (Jour / Nuit)
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                  {themeOverride === null ? "Automatique" : themeOverride === "dark" ? "Mode Nuit" : "Mode Jour"}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { id: "light" as const, label: "☀️ Jour" },
+                  { id: "dark" as const, label: "🌙 Nuit" },
+                  { id: null, label: "💻 Système" },
+                ]).map((mode) => (
+                  <button
+                    key={mode.id ?? "system"}
+                    type="button"
+                    onClick={() => setExplicitTheme(mode.id)}
+                    className={cn(
+                      "h-10 rounded-xl font-bold text-xs border-2 transition-all",
+                      themeOverride === mode.id
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                    )}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </Card>
+
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-6">
               <div className="space-y-4">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -2396,7 +2682,7 @@ export default function App() {
                   <Label className="text-[10px] text-slate-400">Nom du modèle (personnalisé si Google évolue)</Label>
                   <Input
                     type="text"
-                    placeholder="gemini-3.6-flash"
+                    placeholder="gemini-3.8-flash"
                     value={geminiModel}
                     onChange={(e) => setGeminiModel(e.target.value.trim())}
                     className="rounded-xl font-mono text-xs border-slate-200 focus-visible:ring-violet-500 h-9"
@@ -2592,76 +2878,207 @@ export default function App() {
       {/* ─── Search Results Dialog ──────────────────────────────────────────── */}
       <Dialog open={isSearchModalOpen} onOpenChange={setIsSearchModalOpen}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-3xl p-0 overflow-hidden max-h-[92vh] flex flex-col h-[92vh]">
-          <div className="p-6 pb-4 border-b bg-white">
+          <div className="p-5 pb-3 border-b bg-white space-y-3">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-indigo-500" />
-                Résultats de recherche
+              <DialogTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-base">
+                  <Search className="w-5 h-5 text-indigo-500" />
+                  Recherche nutritionnelle
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                  {searchResults.length} résultat{searchResults.length > 1 ? "s" : ""}
+                </span>
               </DialogTitle>
             </DialogHeader>
-          </div>
-          <div
-            ref={searchScrollRef}
-            className="overflow-y-scroll p-6 pt-4 flex-1 min-h-0"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            <div className="grid grid-cols-1 gap-3">
-              {searchResults.map((product) => (
-                <button
-                  key={product.id || Math.random()}
-                  onClick={() => {
-                    setScannedProduct(product);
-                    setIsSearchModalOpen(false);
-                    setIsProductModalOpen(true);
-                    setTempQuantity(product.servingQuantity || 100);
+
+            {/* Barre de recherche en direct dans la modale */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (lastSearchQuery.trim()) {
+                  handleScanSuccess(lastSearchQuery.trim());
+                }
+              }}
+              className="flex gap-2"
+            >
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  value={lastSearchQuery}
+                  onChange={(e) => {
+                    setLastSearchQuery(e.target.value);
+                    setTempName(e.target.value);
                   }}
-                  className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors text-left group"
+                  placeholder="Affiner (ex: poulet, riz cuit, yaourt...)"
+                  className="pl-9 rounded-xl h-10 bg-slate-50 border-slate-200 text-sm font-medium"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={isLoading || !lastSearchQuery.trim()}
+                className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Chercher"}
+              </Button>
+            </form>
+
+            {/* Filtres par source : Tous / CIQUAL / Marques OFF */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {([
+                { id: "ALL", label: `Tous (${searchResults.length})` },
+                { id: "CIQUAL", label: `🇫🇷 CIQUAL (${searchResults.filter((p) => p.source === "CIQUAL").length})` },
+                { id: "OFF", label: `🛒 Marques (${searchResults.filter((p) => p.source === "OFF").length})` },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSearchSourceFilter(tab.id)}
+                  className={cn(
+                    "h-8 rounded-xl text-[11px] font-bold transition-all",
+                    searchSourceFilter === tab.id
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  )}
                 >
-                  <div className="w-14 h-14 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
-                    {product.imageUrl ? (
-                      <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                    ) : (
-                      <Apple className="w-7 h-7 text-slate-300" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-slate-700 truncate group-hover:text-orange-600 transition-colors">
-                        {product.name}
-                      </p>
-                      <span className={cn(
-                        "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase flex-shrink-0",
-                        "bg-blue-100 text-blue-600"
-                      )}>
-                        {product.source}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 font-medium">
-                      {product.kcalPer100g?.toFixed(0) || 0} kcal/100g
-                    </p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-orange-500" />
+                  {tab.label}
                 </button>
               ))}
-              <div className="pt-4 border-t border-slate-100">
-                <p className="text-xs text-slate-400 text-center mb-3">Vous ne trouvez pas votre produit ?</p>
-                <Button
-                  variant="outline"
-                  className="w-full rounded-2xl border-dashed border-2"
-                  onClick={() => {
-                    setScannedProduct({
-                      id: Math.random().toString(), name: tempName,
-                      kcalPer100g: 0, proteinsPer100g: 0, carbsPer100g: 0, fatPer100g: 0,
-                      imageUrl: "", source: 'OFF', servingQuantity: 100
-                    });
-                    setIsSearchModalOpen(false);
-                    setIsProductModalOpen(true);
-                  }}
-                >
-                  Créer manuellement "{tempName}"
-                </Button>
-              </div>
             </div>
+          </div>
+
+          <div
+            ref={searchScrollRef}
+            className="overflow-y-scroll p-5 pt-3 flex-1 min-h-0"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            {(() => {
+              const displayedResults = searchResults.filter((p) =>
+                searchSourceFilter === "ALL" ? true : p.source === searchSourceFilter
+              );
+
+              return (
+                <div className="grid grid-cols-1 gap-2.5">
+                  {displayedResults.length > 0 ? (
+                    displayedResults.map((product, idx) => (
+                      <button
+                        key={product.id || `${product.name}-${idx}`}
+                        onClick={() => {
+                          setScannedProduct(product);
+                          setIsSearchModalOpen(false);
+                          setIsProductModalOpen(true);
+                          setTempQuantity(product.servingQuantity || 100);
+                        }}
+                        className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100 hover:border-indigo-200 transition-all text-left group"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-white flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
+                          {product.imageUrl ? (
+                            <img src={product.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                          ) : product.source === "CIQUAL" ? (
+                            <span className="text-lg">🇫🇷</span>
+                          ) : (
+                            <Apple className="w-6 h-6 text-slate-300" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">
+                              {product.name}
+                            </p>
+                            <span
+                              className={cn(
+                                "text-[9px] px-1.5 py-0.5 rounded-md font-extrabold uppercase flex-shrink-0",
+                                product.source === "CIQUAL"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : product.source === "IA"
+                                    ? "bg-violet-100 text-violet-700"
+                                    : "bg-blue-100 text-blue-700"
+                              )}
+                            >
+                              {product.source === "CIQUAL" ? "CIQUAL" : product.source}
+                            </span>
+                          </div>
+                          {product.brand && (
+                            <p className="text-[10px] text-slate-400 truncate font-medium">{product.brand}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-1 text-[10px] font-semibold">
+                            <span className="text-orange-600 font-extrabold">
+                              {Math.round(product.kcalPer100g || 0)} kcal/100g
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-slate-500">
+                              P: {Number(product.proteinsPer100g || 0).toFixed(1)}g
+                            </span>
+                            <span className="text-slate-500">
+                              G: {Number(product.carbsPer100g || 0).toFixed(1)}g
+                            </span>
+                            <span className="text-slate-500">
+                              L: {Number(product.fatPer100g || 0).toFixed(1)}g
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 flex-shrink-0" />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 space-y-2">
+                      <p className="text-sm font-bold text-slate-500">
+                        Aucun aliment trouvé dans cette catégorie
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Utilisez l'estimation IA Gemini ci-dessous pour obtenir les valeurs nutritionnelles exactes.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Actions IA & Création manuelle */}
+                  <div className="pt-4 mt-2 border-t border-slate-100 space-y-2.5">
+                    <p className="text-[11px] font-bold text-slate-400 text-center">
+                      Plat fait maison, restaurant ou produit introuvable ?
+                    </p>
+                    <Button
+                      type="button"
+                      disabled={isAiTextEstimating || !(lastSearchQuery || tempName).trim()}
+                      onClick={() => handleGeminiTextEstimate(lastSearchQuery || tempName)}
+                      className="w-full rounded-2xl h-11 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-xs shadow-md shadow-violet-500/20 flex items-center justify-center gap-2"
+                    >
+                      {isAiTextEstimating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Estimation par Gemini ({geminiModel})...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          Estimer « {(lastSearchQuery || tempName).slice(0, 28)} » avec Gemini IA
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="w-full rounded-2xl border-dashed border-2 h-10 text-xs font-bold"
+                      onClick={() => {
+                        setScannedProduct({
+                          id: Math.random().toString(),
+                          name: lastSearchQuery || tempName || "Aliment personnalisé",
+                          kcalPer100g: 0,
+                          proteinsPer100g: 0,
+                          carbsPer100g: 0,
+                          fatPer100g: 0,
+                          imageUrl: "",
+                          source: "OFF",
+                          servingQuantity: 100,
+                        });
+                        setIsSearchModalOpen(false);
+                        setIsProductModalOpen(true);
+                      }}
+                    >
+                      Saisir les macros manuellement
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -4196,6 +4613,97 @@ export default function App() {
       </div>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Dock de Navigation Ergonomique (Bas d'écran) ────────────────────── */}
+      <nav
+        aria-label="Navigation principale"
+        className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4 pt-2 pointer-events-none"
+      >
+        <div className="max-w-md mx-auto bg-white/95 backdrop-blur-xl border border-slate-200/90 shadow-2xl rounded-3xl px-2 py-1.5 flex items-center justify-around pointer-events-auto">
+          {/* 1. Journal (Dashboard) */}
+          <button
+            type="button"
+            onClick={() => setView("dashboard")}
+            className={cn(
+              "flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
+              view === "dashboard" && !isHistoryOpen && !isRecipeModalOpen
+                ? "text-indigo-600 bg-indigo-50/80 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 font-semibold"
+            )}
+          >
+            <Utensils className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Journal</span>
+          </button>
+
+          {/* 2. Favoris & Historique (remplace l'ancien bouton haut-gauche) */}
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen(true)}
+            className={cn(
+              "relative flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
+              isHistoryOpen
+                ? "text-indigo-600 bg-indigo-50/80 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 font-semibold"
+            )}
+          >
+            <History className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Aliments</span>
+            {favorites.length > 0 && (
+              <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-amber-400" />
+            )}
+          </button>
+
+          {/* 3. Bouton central : Scanner / Recherche */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsScanningForRecipe(false);
+              setIsScannerOpen(true);
+            }}
+            className="flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white w-14 h-14 rounded-2xl shadow-lg shadow-indigo-500/30 border-4 border-white transition-transform active:scale-95"
+            title="Scanner un code-barres ou chercher un aliment"
+          >
+            <Camera className="w-6 h-6" />
+          </button>
+
+          {/* 4. Recettes */}
+          <button
+            type="button"
+            onClick={() => {
+              setRecipeName("");
+              setRecipeIngredients([]);
+              setRecipeSearchQuery("");
+              setRecipeImageUrl("");
+              setEditingRecipeId(null);
+              setIsRecipeModalOpen(true);
+            }}
+            className={cn(
+              "flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
+              isRecipeModalOpen
+                ? "text-pink-600 bg-pink-50/80 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 font-semibold"
+            )}
+          >
+            <ChefHat className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Recettes</span>
+          </button>
+
+          {/* 5. Profil & Réglages (remplace l'ancien bouton haut-droite) */}
+          <button
+            type="button"
+            onClick={() => setView(view === "dashboard" ? "profile" : "dashboard")}
+            className={cn(
+              "flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
+              view === "profile"
+                ? "text-indigo-600 bg-indigo-50/80 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 font-semibold"
+            )}
+          >
+            <Settings className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Réglages</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }

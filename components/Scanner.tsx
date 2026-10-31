@@ -9,7 +9,7 @@ import {
 } from '@zxing/library';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Keyboard, ScanLine } from "lucide-react";
+import { Keyboard, ScanLine, Search, Camera, CameraOff } from "lucide-react";
 
 interface ScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -32,11 +32,11 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   const focusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [manualCode, setManualCode] = useState("");
-  const [showManual, setShowManual] = useState(false);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
   const [scannerReady, setScannerReady] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const stopScanner = useCallback(() => {
-    // Arrêt de l'intervalle autofocus Android
     if (focusIntervalRef.current) {
       clearInterval(focusIntervalRef.current);
       focusIntervalRef.current = null;
@@ -83,7 +83,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
     }
   }, [isOpen, stopScanner]);
 
-  // Force l'autofocus continu sur Android
   const startAndroidAutofocus = useCallback((stream: MediaStream) => {
     const videoTrack = stream.getVideoTracks()[0];
     if (!videoTrack) return;
@@ -91,15 +90,12 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
     const capabilities = videoTrack.getCapabilities?.() as any;
     if (!capabilities) return;
 
-    // Applique focusMode continu si disponible
     if (capabilities.focusMode?.includes('continuous')) {
       videoTrack.applyConstraints?.({
         advanced: [{ focusMode: 'continuous' } as any]
       }).catch(() => {});
     }
 
-    // Fallback : déclenche manuellement un autofocus toutes les 2s
-    // (utile sur les appareils qui ne maintiennent pas le focus)
     focusIntervalRef.current = setInterval(() => {
       if (!videoTrack || videoTrack.readyState !== 'live') return;
       const caps = videoTrack.getCapabilities?.() as any;
@@ -120,9 +116,13 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   }, []);
 
   useEffect(() => {
-    if (!isOpen || showManual) return;
+    if (!isOpen || !cameraEnabled) {
+      stopScanner();
+      return;
+    }
 
     let cancelled = false;
+    setCameraError(null);
 
     const startCamera = async () => {
       try {
@@ -130,21 +130,22 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.EAN_13,
           BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
           BarcodeFormat.CODE_128,
         ]);
         hints.set(DecodeHintType.TRY_HARDER, true);
 
         const reader = new BrowserMultiFormatReader(hints, {
-          delayBetweenScanAttempts: 100,
+          delayBetweenScanAttempts: 80,
         });
 
-        // Contraintes optimisées pour Android — autofocus + haute résolution
         const constraints: MediaStreamConstraints = {
           video: {
             facingMode: { ideal: 'environment' },
             width: { min: 640, ideal: 1280, max: 1920 },
             height: { min: 480, ideal: 720, max: 1080 },
-            // @ts-ignore — focusMode est supporté sur Android Chrome
+            // @ts-ignore
             focusMode: { ideal: 'continuous' },
             // @ts-ignore
             zoom: { ideal: 1 },
@@ -161,7 +162,6 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
         streamRef.current = stream;
         readerRef.current = reader;
 
-        // Démarre l'autofocus Android
         startAndroidAutofocus(stream);
 
         if (videoRef.current) {
@@ -191,7 +191,8 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
         }
       } catch (err: any) {
         if (!cancelled) {
-          console.error('Scanner start error:', err);
+          console.warn('Scanner camera warning:', err);
+          setCameraError(err.message ?? 'Caméra indisponible');
           if (onScanError) onScanError(err.message ?? 'Impossible de démarrer la caméra');
         }
       }
@@ -203,84 +204,101 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
       cancelled = true;
       stopScanner();
     };
-  }, [isOpen, showManual, onScanSuccess, onScanError, stopScanner, startAndroidAutofocus]);
+  }, [isOpen, cameraEnabled, onScanSuccess, onScanError, stopScanner, startAndroidAutofocus]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCode.trim()) {
+      stopScanner();
       onScanSuccess(manualCode.trim());
       setManualCode("");
     }
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-[4/3] relative border-4 border-slate-100 shadow-inner">
-        {showManual ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-slate-900 text-white">
-            <Keyboard className="w-12 h-12 mb-4 text-indigo-400" />
-            <form onSubmit={handleManualSubmit} className="w-full space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Nom ou Code-barres</label>
-                <Input
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  placeholder="Ex: Pomme ou 301762..."
-                  className="bg-white text-black"
-                  type="text"
-                  autoFocus
-                />
-              </div>
-              <Button type="submit" className="w-full bg-indigo-500 hover:bg-indigo-600">
-                Valider
-              </Button>
-            </form>
-          </div>
-        ) : (
-          <>
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              autoPlay
-              muted
-              playsInline
-            />
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-64 h-40 relative">
-                  <span className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-indigo-400 rounded-tl" />
-                  <span className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-indigo-400 rounded-tr" />
-                  <span className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-indigo-400 rounded-bl" />
-                  <span className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-indigo-400 rounded-br" />
-                  {scannerReady && (
-                    <div
-                      className="absolute left-0 right-0 h-0.5 bg-red-500/70 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
-                      style={{ animation: 'scanLine 2s ease-in-out infinite' }}
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="absolute inset-0 bg-black/40" style={{
-                maskImage: 'radial-gradient(ellipse 280px 180px at 50% 50%, transparent 100%, black 100%)',
-                WebkitMaskImage: 'radial-gradient(ellipse 280px 180px at 50% 50%, transparent 100%, black 100%)',
-              }} />
-            </div>
-            {!scannerReady && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                <ScanLine className="w-10 h-10 text-indigo-400 animate-pulse" />
-              </div>
-            )}
-          </>
-        )}
-      </div>
+    <div className="flex flex-col gap-3">
+      {/* Barre de recherche directe toujours visible */}
+      <form onSubmit={handleManualSubmit} className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Input
+            value={manualCode}
+            onChange={(e) => setManualCode(e.target.value)}
+            placeholder="Nom d'aliment (ex: Banane, Poulet) ou code-barres..."
+            className="pl-10 rounded-2xl h-12 bg-slate-50 border-slate-200 font-semibold text-sm focus-visible:ring-orange-500"
+            type="text"
+          />
+        </div>
+        <Button
+          type="submit"
+          disabled={!manualCode.trim()}
+          className="h-12 px-5 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold shadow-md shadow-orange-500/20"
+        >
+          Chercher
+        </Button>
+      </form>
 
-      <Button
-        variant="outline"
-        onClick={() => setShowManual(!showManual)}
-        className="w-full border-slate-200 text-slate-600"
-      >
-        {showManual ? "Retour au scanner" : "Saisir manuellement le code"}
-      </Button>
+      {/* Zone caméra code-barres */}
+      {cameraEnabled && !cameraError ? (
+        <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-[16/10] relative border-2 border-slate-200/60 shadow-inner">
+          <video
+            ref={videoRef}
+            className="w-full h-full object-cover"
+            autoPlay
+            muted
+            playsInline
+          />
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-56 h-32 relative">
+                <span className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-orange-400 rounded-tl" />
+                <span className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-orange-400 rounded-tr" />
+                <span className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-orange-400 rounded-bl" />
+                <span className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-orange-400 rounded-br" />
+                {scannerReady && (
+                  <div
+                    className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]"
+                    style={{ animation: 'scanLine 2s ease-in-out infinite' }}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="absolute inset-0 bg-black/35" style={{
+              maskImage: 'radial-gradient(ellipse 240px 140px at 50% 50%, transparent 100%, black 100%)',
+              WebkitMaskImage: 'radial-gradient(ellipse 240px 140px at 50% 50%, transparent 100%, black 100%)',
+            }} />
+          </div>
+          {!scannerReady && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/60 text-white">
+              <ScanLine className="w-8 h-8 text-orange-400 animate-pulse" />
+              <span className="text-[11px] font-medium text-slate-300">Activation caméra...</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setCameraEnabled(false)}
+            className="absolute bottom-2.5 right-2.5 bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold px-2.5 py-1 rounded-xl flex items-center gap-1.5 backdrop-blur-xs border border-white/15 transition-colors"
+          >
+            <CameraOff className="w-3.5 h-3.5" />
+            Masquer caméra
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-slate-100/80 border border-slate-200/60 text-xs text-slate-500">
+          <span className="flex items-center gap-2 font-medium">
+            <Keyboard className="w-4 h-4 text-orange-500" />
+            {cameraError ? "Mode recherche texte actif (caméra non détectée)" : "Caméra désactivée"}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setCameraError(null); setCameraEnabled(true); }}
+            className="font-bold text-orange-600 hover:underline flex items-center gap-1"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            Activer le scan
+          </button>
+        </div>
+      )}
 
       <style>{`
         @keyframes scanLine {

@@ -5,8 +5,11 @@ const urlsToCache = ['/'];
 const EXTERNAL_HOSTS = [
   'fr.openfoodfacts.org',
   'world.openfoodfacts.org',
+  'search.openfoodfacts.org',
   'api.nal.usda.gov',
   'images.openfoodfacts.org',
+  'corsproxy.io',
+  'generativelanguage.googleapis.com',
 ];
 
 self.addEventListener('install', (event) => {
@@ -25,22 +28,39 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // Bypass total pour les APIs externes — le SW ne touche pas à ces requêtes
-  if (EXTERNAL_HOSTS.some((host) => url.hostname === host)) {
-    return; // pas de event.respondWith → le navigateur gère directement
+  // Seules les requêtes GET sont éligibles au cache
+  if (event.request.method !== 'GET') {
+    return;
   }
 
-  // Pour les ressources locales : network-first, cache en fallback
+  const url = new URL(event.request.url);
+
+  // Bypass total pour les APIs externes et les endpoints de synchronisation/backend
+  if (
+    EXTERNAL_HOSTS.some((host) => url.hostname === host) ||
+    url.pathname.startsWith('/api/')
+  ) {
+    return;
+  }
+
+  // Pour les ressources locales : network-first avec mise en cache dynamique des bundles
   event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request).then((cached) => {
-        // Si rien en cache non plus, on laisse l'erreur remonter proprement
-        if (cached) return cached;
-        return new Response('Network error', { status: 503, statusText: 'Service Unavailable' });
-      });
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && (response.type === 'basic' || response.type === 'cors')) {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return new Response('Network error', { status: 503, statusText: 'Service Unavailable' });
+        });
+      })
   );
 });
 
