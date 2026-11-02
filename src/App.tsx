@@ -256,6 +256,41 @@ const INITIAL_MEALS: MealState[] = [
   { title: "En-cas", icon: "Apple", color: "text-red-500", bg: "bg-red-50", products: [] },
 ];
 
+const MEAL_CARD_THEMES: Record<
+  string,
+  {
+    cardBg: string;
+    border: string;
+    iconColor: string;
+    accentGlow: string;
+  }
+> = {
+  "Petit-déj": {
+    cardBg: "bg-orange-50/90 dark:bg-gradient-to-br dark:from-orange-950/40 dark:to-slate-900/90",
+    border: "border border-orange-200/80 dark:border-orange-500/30",
+    iconColor: "text-orange-500 dark:text-orange-400",
+    accentGlow: "shadow-orange-500/5 dark:shadow-orange-950/30",
+  },
+  "Déjeuner": {
+    cardBg: "bg-yellow-50/90 dark:bg-gradient-to-br dark:from-amber-950/40 dark:to-slate-900/90",
+    border: "border border-yellow-200/80 dark:border-amber-500/30",
+    iconColor: "text-yellow-500 dark:text-amber-400",
+    accentGlow: "shadow-amber-500/5 dark:shadow-amber-950/30",
+  },
+  "Dîner": {
+    cardBg: "bg-indigo-50/90 dark:bg-gradient-to-br dark:from-indigo-950/40 dark:to-slate-900/90",
+    border: "border border-indigo-200/80 dark:border-indigo-500/30",
+    iconColor: "text-indigo-500 dark:text-indigo-400",
+    accentGlow: "shadow-indigo-500/5 dark:shadow-indigo-950/30",
+  },
+  "En-cas": {
+    cardBg: "bg-red-50/90 dark:bg-gradient-to-br dark:from-rose-950/40 dark:to-slate-900/90",
+    border: "border border-red-200/80 dark:border-rose-500/30",
+    iconColor: "text-red-500 dark:text-rose-400",
+    accentGlow: "shadow-rose-500/5 dark:shadow-rose-950/30",
+  },
+};
+
 export default function App() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"dashboard" | "profile">("dashboard");
@@ -2051,6 +2086,12 @@ export default function App() {
             <div className="grid grid-cols-2 gap-4">
               {meals.map((meal, index) => {
                 const mealKcal = meal.products.reduce((total, p) => total + (p.kcalPer100g * p.quantityGrams) / 100, 0);
+                const theme = MEAL_CARD_THEMES[meal.title] || {
+                  cardBg: meal.bg || "bg-white",
+                  border: "border border-slate-100 dark:border-slate-800",
+                  iconColor: meal.color,
+                  accentGlow: "",
+                };
                 return (
                   <motion.div
                     key={meal.title}
@@ -2059,22 +2100,32 @@ export default function App() {
                     transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
                   >
                     <Card
-                      className={cn("border-none shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-[2rem] cursor-pointer overflow-hidden", meal.bg || "bg-white")}
+                      className={cn(
+                        "shadow-lg hover:shadow-xl transition-all duration-300 rounded-[2rem] cursor-pointer overflow-hidden",
+                        theme.border,
+                        theme.cardBg,
+                        theme.accentGlow
+                      )}
                       onClick={() => setSelectedMealForView(index)}
                     >
                       <CardContent className="p-5 relative">
                         <div className="flex justify-between items-start">
-                          <h3 className="text-xl font-bold text-slate-900">{meal.title}</h3>
+                          <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+                            {meal.title}
+                          </h3>
                           {(() => {
                             const MealIcon = ICON_MAP[meal.icon] || Apple;
-                            return <MealIcon className={cn("w-7 h-7", meal.color)} />;
+                            return <MealIcon className={cn("w-7 h-7", theme.iconColor)} />;
                           })()}
                         </div>
                         <div className="mt-2">
-                          <p className="text-2xl font-black text-slate-900 leading-tight">
-                            {mealKcal.toFixed(1)} <span className="text-sm font-bold text-slate-500">kcal</span>
+                          <p className="text-2xl font-black text-slate-900 dark:text-white leading-tight">
+                            {mealKcal.toFixed(1)}{" "}
+                            <span className="text-sm font-bold text-slate-500 dark:text-slate-400">kcal</span>
                           </p>
-                          <p className="text-sm font-bold text-slate-400">{meal.products.length} aliment(s)</p>
+                          <p className="text-sm font-bold text-slate-400 dark:text-slate-400">
+                            {meal.products.length} aliment(s)
+                          </p>
                         </div>
                       </CardContent>
                     </Card>
@@ -4619,7 +4670,7 @@ export default function App() {
         aria-label="Navigation principale"
         className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4 pt-2 pointer-events-none"
       >
-        <div className="max-w-md mx-auto bg-white/95 backdrop-blur-xl border border-slate-200/90 shadow-2xl rounded-3xl px-2 py-1.5 flex items-center justify-around pointer-events-auto">
+        <div className="max-w-md mx-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-3xl px-2 py-1.5 flex items-center justify-around pointer-events-auto">
           {/* 1. Journal (Dashboard) */}
           <button
             type="button"
@@ -4627,8 +4678,8 @@ export default function App() {
             className={cn(
               "flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
               view === "dashboard" && !isHistoryOpen && !isRecipeModalOpen
-                ? "text-indigo-600 bg-indigo-50/80 font-extrabold"
-                : "text-slate-400 hover:text-slate-600 font-semibold"
+                ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-500/20 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-semibold"
             )}
           >
             <Utensils className="w-5 h-5" />
@@ -4642,8 +4693,8 @@ export default function App() {
             className={cn(
               "relative flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
               isHistoryOpen
-                ? "text-indigo-600 bg-indigo-50/80 font-extrabold"
-                : "text-slate-400 hover:text-slate-600 font-semibold"
+                ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-500/20 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-semibold"
             )}
           >
             <History className="w-5 h-5" />
@@ -4660,7 +4711,7 @@ export default function App() {
               setIsScanningForRecipe(false);
               setIsScannerOpen(true);
             }}
-            className="flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white w-14 h-14 rounded-2xl shadow-lg shadow-indigo-500/30 border-4 border-white transition-transform active:scale-95"
+            className="flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white w-14 h-14 rounded-2xl shadow-lg shadow-indigo-500/30 border-4 border-white dark:border-slate-900 transition-transform active:scale-95"
             title="Scanner un code-barres ou chercher un aliment"
           >
             <Camera className="w-6 h-6" />
@@ -4680,8 +4731,8 @@ export default function App() {
             className={cn(
               "flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
               isRecipeModalOpen
-                ? "text-pink-600 bg-pink-50/80 font-extrabold"
-                : "text-slate-400 hover:text-slate-600 font-semibold"
+                ? "text-pink-600 dark:text-pink-400 bg-pink-50/80 dark:bg-pink-500/20 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-semibold"
             )}
           >
             <ChefHat className="w-5 h-5" />
@@ -4695,8 +4746,8 @@ export default function App() {
             className={cn(
               "flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all",
               view === "profile"
-                ? "text-indigo-600 bg-indigo-50/80 font-extrabold"
-                : "text-slate-400 hover:text-slate-600 font-semibold"
+                ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-500/20 font-extrabold"
+                : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-semibold"
             )}
           >
             <Settings className="w-5 h-5" />

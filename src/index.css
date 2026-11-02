@@ -180,6 +180,57 @@
 .dark .bg-white\/90 {
   background-color: rgba(19, 28, 49, 0.88) !important;
 }
+.dark .bg-white\/95 {
+  background-color: rgba(19, 28, 49, 0.95) !important;
+}
+.dark .border-white {
+  border-color: #131c31 !important;
+}
+
+/* Pastels adaptés au mode Nuit pour garantir le contraste du texte blanc */
+.dark .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.16) !important;
+}
+.dark .bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.16) !important;
+}
+.dark .bg-indigo-50 {
+  background-color: rgba(99, 102, 241, 0.18) !important;
+}
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+}
+.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+}
+.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+}
+.dark .bg-pink-50,
+.dark .bg-pink-50\/10,
+.dark .bg-pink-50\/30,
+.dark .bg-pink-50\/40,
+.dark .bg-pink-50\/70,
+.dark .bg-pink-50\/80 {
+  background-color: rgba(236, 72, 153, 0.16) !important;
+}
+.dark .bg-violet-50,
+.dark .bg-violet-50\/50,
+.dark .bg-violet-50\/70 {
+  background-color: rgba(139, 92, 246, 0.18) !important;
+}
+
+/* Bordures pastels adaptées en mode Nuit */
+.dark .border-orange-100,
+.dark .border-yellow-100,
+.dark .border-indigo-100,
+.dark .border-red-100,
+.dark .border-pink-100,
+.dark .border-violet-100,
+.dark .border-emerald-100 {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
 .dark .bg-slate-100 {
   background-color: #1e293b !important;
 }
