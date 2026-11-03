@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import {
   BrowserMultiFormatReader,
+  BrowserCodeReader,
 } from '@zxing/browser';
 import {
   BarcodeFormat,
@@ -9,7 +10,7 @@ import {
 } from '@zxing/library';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Keyboard, ScanLine, Search, Camera, CameraOff } from "lucide-react";
+import { Keyboard, ScanLine, Search, Camera, CameraOff, RefreshCw, AlertCircle } from "lucide-react";
 
 interface ScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -21,6 +22,11 @@ export interface ScannerHandle {
   stopCamera: () => void;
 }
 
+interface CameraErrorInfo {
+  title: string;
+  hint: string;
+}
+
 export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   ({ onScanSuccess, onScanError, isOpen }, ref) => {
 
@@ -29,41 +35,84 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const isProcessingRef = useRef(false);
+  const isScanningRef = useRef(false);
+  const animFrameRef = useRef<number | null>(null);
   const focusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onScanSuccessRef = useRef(onScanSuccess);
+  useEffect(() => {
+    onScanSuccessRef.current = onScanSuccess;
+  }, [onScanSuccess]);
+
+  const onScanErrorRef = useRef(onScanError);
+  useEffect(() => {
+    onScanErrorRef.current = onScanError;
+  }, [onScanError]);
 
   const [manualCode, setManualCode] = useState("");
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [scannerReady, setScannerReady] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<CameraErrorInfo | null>(null);
+  const [retryCounter, setRetryCounter] = useState(0);
 
+  // ─── Arrêt propre et libération complète du matériel caméra ───────────────
   const stopScanner = useCallback(() => {
+    isScanningRef.current = false;
+
+    // 1. Annulation de la boucle de détection BarcodeDetector
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    // 2. Annulation des timers d'autofocus pour éviter l'appel sur une piste arrêtée
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = null;
+    }
     if (focusIntervalRef.current) {
       clearInterval(focusIntervalRef.current);
       focusIntervalRef.current = null;
     }
 
+    // 3. Arrêt des contrôles ZXing
     if (controlsRef.current) {
       try { controlsRef.current.stop(); } catch (_) {}
       controlsRef.current = null;
     }
 
+    // 4. Arrêt explicite de toutes les pistes du flux MediaStream
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop();
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch (_) {}
       });
       streamRef.current = null;
     }
 
+    // 5. Libération des flux persistants ZXing
+    try {
+      BrowserCodeReader.releaseAllStreams();
+    } catch (_) {}
+
+    // 6. Réinitialisation et détachement de la balise vidéo
     if (videoRef.current) {
       const video = videoRef.current;
-      if (video.srcObject) {
-        const s = video.srcObject as MediaStream;
-        s.getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-      }
-      video.pause();
-      video.removeAttribute("src");
-      try { video.load(); } catch (_) {}
+      try {
+        if (video.srcObject) {
+          const s = video.srcObject as MediaStream;
+          s.getTracks().forEach((t) => {
+            try { t.stop(); t.enabled = false; } catch (_) {}
+          });
+          video.srcObject = null;
+        }
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch (_) {}
     }
 
     if (readerRef.current) {
@@ -72,49 +121,121 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
     }
 
     setScannerReady(false);
-    isProcessingRef.current = false;
   }, []);
 
   useImperativeHandle(ref, () => ({ stopCamera: stopScanner }), [stopScanner]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      stopScanner();
-    }
-  }, [isOpen, stopScanner]);
+  // ─── Formatage d'erreur précis pour Android ───────────────────────────────
+  const formatCameraError = (err: any): CameraErrorInfo => {
+    const name = err?.name || "";
+    const msg = String(err?.message || "");
 
-  const startAndroidAutofocus = useCallback((stream: MediaStream) => {
+    if (name === "NotAllowedError" || name === "PermissionDeniedError" || msg.includes("Permission")) {
+      return {
+        title: "Autorisation caméra refusée",
+        hint: "Sur Android Chrome : appuyez sur l'icône 🔒 ou réglages à gauche de l'adresse pour autoriser la caméra, puis cliquez sur 'Réessayer'.",
+      };
+    }
+
+    if (name === "NotReadableError" || name === "TrackStartError" || msg.includes("Could not start")) {
+      return {
+        title: "Caméra temporairement occupée",
+        hint: "Le matériel caméra était verrouillé par une session précédente. Cliquez sur 'Réessayer' ci-dessous pour le réinitialiser.",
+      };
+    }
+
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      return {
+        title: "Connexion sécurisée requise sur Android",
+        hint: "Chrome Android bloque l'accès caméra en HTTP. Utilisez la version sécurisée GitHub (https://nxm310.github.io/compteur-KCAL/) ou saisissez le code/nom ci-dessus.",
+      };
+    }
+
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return {
+        title: "Aucune caméra détectée",
+        hint: "Vérifiez que votre smartphone dispose d'une caméra arrière fonctionnelle.",
+      };
+    }
+
+    return {
+      title: "Caméra indisponible",
+      hint: msg || "Impossible d'accéder au flux vidéo de la caméra.",
+    };
+  };
+
+  // ─── Acquisition progressive du flux vidéo avec repli Android ─────────────
+  const acquireStream = async (retries = 1): Promise<MediaStream> => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      if (typeof window !== "undefined" && !window.isSecureContext) {
+        throw new Error("SECURE_CONTEXT_REQUIRED");
+      }
+      throw new Error("NAVIGATOR_MEDIA_DEVICES_NOT_SUPPORTED");
+    }
+
+    // Palier 1 : idéal mobile (caméra arrière, 720p)
+    const tier1: MediaStreamConstraints = {
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    };
+
+    // Palier 2 : simple facingMode
+    const tier2: MediaStreamConstraints = {
+      video: { facingMode: "environment" },
+      audio: false,
+    };
+
+    // Palier 3 : vidéo basique sans contrainte
+    const tier3: MediaStreamConstraints = {
+      video: true,
+      audio: false,
+    };
+
+    try {
+      return await navigator.mediaDevices.getUserMedia(tier1);
+    } catch (err1: any) {
+      // Sur Android, si la caméra précédente n'a pas fini de libérer le matériel (NotReadableError)
+      if ((err1?.name === "NotReadableError" || err1?.name === "TrackStartError") && retries > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        return acquireStream(retries - 1);
+      }
+
+      // Repli palier 2
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return await navigator.mediaDevices.getUserMedia(tier2);
+      } catch (err2) {
+        // Repli palier 3
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return await navigator.mediaDevices.getUserMedia(tier3);
+        } catch {
+          throw err1;
+        }
+      }
+    }
+  };
+
+  // ─── Autofocus sécurisé sans fuite de mémoire ─────────────────────────────
+  const setupAutofocus = useCallback((stream: MediaStream) => {
     const videoTrack = stream.getVideoTracks()[0];
     if (!videoTrack) return;
 
-    const capabilities = videoTrack.getCapabilities?.() as any;
-    if (!capabilities) return;
-
-    if (capabilities.focusMode?.includes('continuous')) {
-      videoTrack.applyConstraints?.({
-        advanced: [{ focusMode: 'continuous' } as any]
-      }).catch(() => {});
-    }
-
-    focusIntervalRef.current = setInterval(() => {
-      if (!videoTrack || videoTrack.readyState !== 'live') return;
-      const caps = videoTrack.getCapabilities?.() as any;
-      if (caps?.focusMode?.includes('single-shot')) {
+    try {
+      const capabilities = (videoTrack.getCapabilities?.() as any) || {};
+      if (capabilities.focusMode?.includes("continuous")) {
         videoTrack.applyConstraints?.({
-          advanced: [{ focusMode: 'single-shot' } as any]
-        })
-        .then(() => {
-          setTimeout(() => {
-            videoTrack.applyConstraints?.({
-              advanced: [{ focusMode: 'continuous' } as any]
-            }).catch(() => {});
-          }, 500);
-        })
-        .catch(() => {});
+          advanced: [{ focusMode: "continuous" } as any],
+        }).catch(() => {});
       }
-    }, 2000);
+    } catch (_) {}
   }, []);
 
+  // ─── Cycle de vie principal de la caméra ──────────────────────────────────
   useEffect(() => {
     if (!isOpen || !cameraEnabled) {
       stopScanner();
@@ -123,9 +244,85 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
 
     let cancelled = false;
     setCameraError(null);
+    isProcessingRef.current = false;
 
     const startCamera = async () => {
       try {
+        // Délai de 80ms pour laisser Android fermer la session précédente lors d'une 2e ouverture
+        await new Promise((r) => setTimeout(r, 80));
+        if (cancelled) return;
+
+        const stream = await acquireStream(1);
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        setupAutofocus(stream);
+
+        const video = videoRef.current;
+        if (!video) return;
+
+        // Attributs cruciaux pour Android Chrome & iOS Safari
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
+        video.muted = true;
+        video.srcObject = stream;
+
+        try {
+          await video.play();
+        } catch (_) {
+          // Sur certains navigateurs, un 2e play() immédiat est requis
+        }
+
+        if (cancelled) {
+          stopScanner();
+          return;
+        }
+
+        setScannerReady(true);
+        isScanningRef.current = true;
+
+        // Détection matérielle native (Chrome Android) ou fallback ZXing
+        const hasNativeDetector = typeof window !== "undefined" && "BarcodeDetector" in window;
+
+        if (hasNativeDetector) {
+          try {
+            const formats = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"];
+            const detector = new (window as any).BarcodeDetector({ formats });
+
+            const detectFrame = async () => {
+              if (!isScanningRef.current || !videoRef.current || cancelled) return;
+
+              if (videoRef.current.readyState >= 2) {
+                try {
+                  const barcodes = await detector.detect(videoRef.current);
+                  if (barcodes && barcodes.length > 0 && isScanningRef.current && !isProcessingRef.current) {
+                    const rawValue = barcodes[0].rawValue;
+                    if (rawValue) {
+                      isProcessingRef.current = true;
+                      stopScanner();
+                      onScanSuccessRef.current(rawValue);
+                      return;
+                    }
+                  }
+                } catch (_) {}
+              }
+
+              if (isScanningRef.current && !cancelled) {
+                animFrameRef.current = requestAnimationFrame(detectFrame);
+              }
+            };
+
+            animFrameRef.current = requestAnimationFrame(detectFrame);
+            return;
+          } catch (nativeErr) {
+            console.warn("Repli vers ZXing suite à:", nativeErr);
+          }
+        }
+
+        // Fallback ZXing (iOS Safari et navigateurs sans BarcodeDetector natif)
         const hints = new Map();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.EAN_13,
@@ -139,61 +336,31 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
         const reader = new BrowserMultiFormatReader(hints, {
           delayBetweenScanAttempts: 80,
         });
-
-        const constraints: MediaStreamConstraints = {
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 },
-            // @ts-ignore
-            focusMode: { ideal: 'continuous' },
-            // @ts-ignore
-            zoom: { ideal: 1 },
-          },
-        };
-
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        if (cancelled) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        streamRef.current = stream;
         readerRef.current = reader;
 
-        startAndroidAutofocus(stream);
+        const controls = await reader.decodeFromVideoElement(video, (result, error) => {
+          if (result && !isProcessingRef.current && isScanningRef.current) {
+            isProcessingRef.current = true;
+            stopScanner();
+            onScanSuccessRef.current(result.getText());
+          }
+          if (error && !(error instanceof NotFoundException)) {
+            if (onScanErrorRef.current) onScanErrorRef.current(error.message);
+          }
+        });
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-
-          if (cancelled) { stopScanner(); return; }
-
-          setScannerReady(true);
-
-          const controls = await reader.decodeFromVideoElement(
-            videoRef.current,
-            (result, error) => {
-              if (result && !isProcessingRef.current) {
-                isProcessingRef.current = true;
-                stopScanner();
-                onScanSuccess(result.getText());
-              }
-              if (error && !(error instanceof NotFoundException)) {
-                if (onScanError) onScanError(error.message);
-              }
-            }
-          );
-
-          if (cancelled) { stopScanner(); return; }
-          controlsRef.current = controls;
+        if (cancelled) {
+          stopScanner();
+          return;
         }
+        controlsRef.current = controls;
+
       } catch (err: any) {
         if (!cancelled) {
-          console.warn('Scanner camera warning:', err);
-          setCameraError(err.message ?? 'Caméra indisponible');
-          if (onScanError) onScanError(err.message ?? 'Impossible de démarrer la caméra');
+          console.warn("Scanner camera warning:", err);
+          const formatted = formatCameraError(err);
+          setCameraError(formatted);
+          if (onScanErrorRef.current) onScanErrorRef.current(formatted.hint);
         }
       }
     };
@@ -204,15 +371,22 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
       cancelled = true;
       stopScanner();
     };
-  }, [isOpen, cameraEnabled, onScanSuccess, onScanError, stopScanner, startAndroidAutofocus]);
+  }, [isOpen, cameraEnabled, retryCounter, stopScanner, setupAutofocus]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCode.trim()) {
       stopScanner();
-      onScanSuccess(manualCode.trim());
+      onScanSuccessRef.current(manualCode.trim());
       setManualCode("");
     }
+  };
+
+  const handleRetryCamera = () => {
+    stopScanner();
+    setCameraError(null);
+    setCameraEnabled(true);
+    setRetryCounter((c) => c + 1);
   };
 
   return (
@@ -225,7 +399,7 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
             placeholder="Nom d'aliment (ex: Banane, Poulet) ou code-barres..."
-            className="pl-10 rounded-2xl h-12 bg-slate-50 border-slate-200 font-semibold text-sm focus-visible:ring-orange-500"
+            className="pl-10 rounded-2xl h-12 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 font-semibold text-sm focus-visible:ring-orange-500"
             type="text"
           />
         </div>
@@ -240,7 +414,7 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
 
       {/* Zone caméra code-barres */}
       {cameraEnabled && !cameraError ? (
-        <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-[16/10] relative border-2 border-slate-200/60 shadow-inner">
+        <div className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl bg-black aspect-[16/10] relative border-2 border-slate-200/60 dark:border-slate-800 shadow-inner">
           <video
             ref={videoRef}
             className="w-full h-full object-cover"
@@ -283,11 +457,40 @@ export const Scanner = forwardRef<ScannerHandle, ScannerProps>(
             Masquer caméra
           </button>
         </div>
+      ) : cameraError ? (
+        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 space-y-2.5 text-left">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{cameraError.title}</span>
+          </div>
+          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            {cameraError.hint}
+          </p>
+          <div className="flex gap-2 pt-1">
+            <Button
+              type="button"
+              onClick={handleRetryCamera}
+              className="h-9 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Réessayer la caméra
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setCameraError(null); setCameraEnabled(false); }}
+              className="h-9 px-3 rounded-xl text-xs font-semibold"
+            >
+              <Keyboard className="w-3.5 h-3.5 mr-1" />
+              Saisie manuelle
+            </Button>
+          </div>
+        </div>
       ) : (
-        <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-slate-100/80 border border-slate-200/60 text-xs text-slate-500">
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-slate-100/80 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 text-xs text-slate-500">
           <span className="flex items-center gap-2 font-medium">
             <Keyboard className="w-4 h-4 text-orange-500" />
-            {cameraError ? "Mode recherche texte actif (caméra non détectée)" : "Caméra désactivée"}
+            Caméra désactivée
           </span>
           <button
             type="button"
