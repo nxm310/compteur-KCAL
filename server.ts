@@ -5,6 +5,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import "dotenv/config";
 import { GoogleGenAI } from "@google/genai";
+import { analyzeFoodImage, analyzeFoodText, AiProvider, AI_PROVIDERS } from "./services/aiService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,192 +114,118 @@ async function startServer() {
     }
   });
 
-  // API for Gemini AI Multimodal Food Analysis
+  // API for Multi-Provider AI Multimodal Food Analysis (Gemini, OpenAI, Mistral)
   app.post("/api/food/analyze-image", async (req, res) => {
     const { image, model: reqModel } = req.body;
     if (!image) {
       return res.status(400).json({ error: "Aucune donnée d'image reçue." });
     }
 
-    const customApiKey = req.headers["x-gemini-api-key"];
-    const apiKey =
-      typeof customApiKey === "string" && customApiKey.trim()
-        ? customApiKey.trim()
-        : process.env.GEMINI_API_KEY;
+    const rawProvider = (req.headers["x-ai-provider"] as string)?.toLowerCase();
+    const provider: AiProvider =
+      rawProvider === "openai" || rawProvider === "mistral" ? rawProvider : "gemini";
+
+    let apiKey = (typeof req.headers["x-ai-api-key"] === "string" && req.headers["x-ai-api-key"].trim()) || "";
+    if (!apiKey) {
+      if (provider === "gemini") {
+        apiKey =
+          (typeof req.headers["x-gemini-api-key"] === "string" && req.headers["x-gemini-api-key"].trim()) ||
+          process.env.GEMINI_API_KEY ||
+          "";
+      } else if (provider === "openai") {
+        apiKey =
+          (typeof req.headers["x-openai-api-key"] === "string" && req.headers["x-openai-api-key"].trim()) ||
+          process.env.OPENAI_API_KEY ||
+          "";
+      } else if (provider === "mistral") {
+        apiKey =
+          (typeof req.headers["x-mistral-api-key"] === "string" && req.headers["x-mistral-api-key"].trim()) ||
+          process.env.MISTRAL_API_KEY ||
+          "";
+      }
+    }
 
     if (!apiKey) {
+      const providerLabel = AI_PROVIDERS[provider]?.name || provider;
       return res.status(400).json({
-        error: "Clé API Gemini manquante. Veuillez en configurer une dans les paramètres de l'application.",
+        error: `Clé API ${providerLabel} manquante. Veuillez en configurer une dans les réglages de l'application.`,
       });
     }
 
-    const customModelHeader = req.headers["x-gemini-model"];
+    const customModelHeader = req.headers["x-ai-model"] || req.headers["x-gemini-model"];
     const preferredModel =
       (typeof customModelHeader === "string" && customModelHeader.trim()) ||
       (typeof reqModel === "string" && reqModel.trim()) ||
-      process.env.GEMINI_MODEL ||
-      "gemini-3.8-flash";
-
-    const candidateModels = Array.from(
-      new Set([
-        preferredModel,
-        "gemini-3.8-flash",
-        "gemini-4-argon",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-      ])
-    );
+      "";
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
-
-      const promptText =
-        "Analyze this food image. Identify the food item and estimate its nutritional values. " +
-        "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
-        "The JSON keys MUST be exactly: " +
-        "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
-        "'estimatedWeight' (number, the estimated portion weight in grams), " +
-        "'kcalPer100g' (number, estimated calories per 100g of this item), " +
-        "'proteinPer100g' (number, estimated proteins in grams per 100g), " +
-        "'carbsPer100g' (number, estimated carbohydrates in grams per 100g), " +
-        "'fatPer100g' (number, estimated fats/lipids in grams per 100g).";
-
-      let lastError: any = null;
-      let text = "";
-
-      for (const modelToTry of candidateModels) {
-        try {
-          const response = await ai.models.generateContent({
-            model: modelToTry,
-            contents: [
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: base64Data,
-                },
-              },
-              promptText,
-            ],
-            config: {
-              responseMimeType: "application/json",
-            },
-          });
-
-          if (response.text) {
-            text = response.text;
-            break;
-          }
-        } catch (modelErr: any) {
-          lastError = modelErr;
-          console.warn(
-            `Modèle ${modelToTry} non disponible ou erreur, essai du suivant...`,
-            modelErr?.message || modelErr
-          );
-        }
-      }
-
-      if (!text) {
-        throw lastError || new Error("L'API Gemini a retourné une réponse vide.");
-      }
-
-      let cleanJson = text.trim();
-      if (cleanJson.startsWith("```")) {
-        cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-      }
-
-      const result = JSON.parse(cleanJson);
+      const result = await analyzeFoodImage({
+        provider,
+        apiKey,
+        model: preferredModel,
+        base64Image: image,
+      });
       res.json(result);
     } catch (error: any) {
-      console.error("Gemini Image Analysis Error:", error);
+      console.error(`${provider} Image Analysis Error:`, error);
       res.status(500).json({ error: error.message || "Erreur lors de l'analyse de l'image." });
     }
   });
 
-  // API for Gemini AI Text Nutritional Estimation
+  // API for Multi-Provider AI Text Nutritional Estimation (Gemini, OpenAI, Mistral)
   app.post("/api/food/analyze-text", async (req, res) => {
     const { query, model: reqModel } = req.body;
     if (!query || typeof query !== "string") {
       return res.status(400).json({ error: "Veuillez saisir une description d'aliment ou de plat." });
     }
 
-    const customApiKey = req.headers["x-gemini-api-key"];
-    const apiKey =
-      typeof customApiKey === "string" && customApiKey.trim()
-        ? customApiKey.trim()
-        : process.env.GEMINI_API_KEY;
+    const rawProvider = (req.headers["x-ai-provider"] as string)?.toLowerCase();
+    const provider: AiProvider =
+      rawProvider === "openai" || rawProvider === "mistral" ? rawProvider : "gemini";
+
+    let apiKey = (typeof req.headers["x-ai-api-key"] === "string" && req.headers["x-ai-api-key"].trim()) || "";
+    if (!apiKey) {
+      if (provider === "gemini") {
+        apiKey =
+          (typeof req.headers["x-gemini-api-key"] === "string" && req.headers["x-gemini-api-key"].trim()) ||
+          process.env.GEMINI_API_KEY ||
+          "";
+      } else if (provider === "openai") {
+        apiKey =
+          (typeof req.headers["x-openai-api-key"] === "string" && req.headers["x-openai-api-key"].trim()) ||
+          process.env.OPENAI_API_KEY ||
+          "";
+      } else if (provider === "mistral") {
+        apiKey =
+          (typeof req.headers["x-mistral-api-key"] === "string" && req.headers["x-mistral-api-key"].trim()) ||
+          process.env.MISTRAL_API_KEY ||
+          "";
+      }
+    }
 
     if (!apiKey) {
+      const providerLabel = AI_PROVIDERS[provider]?.name || provider;
       return res.status(400).json({
-        error: "Clé API Gemini manquante. Veuillez en configurer une dans les paramètres.",
+        error: `Clé API ${providerLabel} manquante. Veuillez en configurer une dans les réglages.`,
       });
     }
 
-    const customModelHeader = req.headers["x-gemini-model"];
+    const customModelHeader = req.headers["x-ai-model"] || req.headers["x-gemini-model"];
     const preferredModel =
       (typeof customModelHeader === "string" && customModelHeader.trim()) ||
       (typeof reqModel === "string" && reqModel.trim()) ||
-      process.env.GEMINI_MODEL ||
-      "gemini-3.8-flash";
-
-    const candidateModels = Array.from(
-      new Set([
-        preferredModel,
-        "gemini-3.8-flash",
-        "gemini-4-argon",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-      ])
-    );
+      "";
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const promptText =
-        `Tu es un expert en nutrition française (table CIQUAL / ANSES). Analyse l'aliment ou le plat suivant : "${query}". ` +
-        "Fournis une estimation nutritionnelle précise pour 100g ainsi que le poids moyen d'une portion normale. " +
-        "IMPORTANT: Réponds UNIQUEMENT avec un objet JSON brut valide (sans balises markdown) contenant exactement les clés : " +
-        "'name' (string, nom clair en français ex: 'Couscous Royal', 'Croissant aux amandes'), " +
-        "'estimatedWeight' (number, poids moyen d'une portion en grammes), " +
-        "'kcalPer100g' (number, calories pour 100g), " +
-        "'proteinPer100g' (number, protéines en g pour 100g), " +
-        "'carbsPer100g' (number, glucides en g pour 100g), " +
-        "'fatPer100g' (number, lipides en g pour 100g).";
-
-      let lastError: any = null;
-      let text = "";
-
-      for (const modelToTry of candidateModels) {
-        try {
-          const response = await ai.models.generateContent({
-            model: modelToTry,
-            contents: [promptText],
-            config: {
-              responseMimeType: "application/json",
-            },
-          });
-
-          if (response.text) {
-            text = response.text;
-            break;
-          }
-        } catch (modelErr: any) {
-          lastError = modelErr;
-        }
-      }
-
-      if (!text) {
-        throw lastError || new Error("L'API Gemini a retourné une réponse vide.");
-      }
-
-      let cleanJson = text.trim();
-      if (cleanJson.startsWith("```")) {
-        cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-      }
-
-      const result = JSON.parse(cleanJson);
+      const result = await analyzeFoodText({
+        provider,
+        apiKey,
+        model: preferredModel,
+        query,
+      });
       res.json(result);
     } catch (error: any) {
-      console.error("Gemini Text Analysis Error:", error);
+      console.error(`${provider} Text Analysis Error:`, error);
       res.status(500).json({ error: error.message || "Erreur lors de l'estimation par IA." });
     }
   });

@@ -55,6 +55,9 @@ import {
   Cpu,
   Camera,
   Settings,
+  Bot,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,15 +75,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Scanner, ScannerHandle } from "@/components/Scanner";
 import { fetchProductByBarcode, searchProductsByName, fetchNutritionData, OFFProduct, UnifiedProduct } from "@/services/foodService";
+import {
+  AiProvider,
+  AiFoodResult,
+  AI_PROVIDERS,
+  DEFAULT_AI_PROVIDER,
+  analyzeFoodImage,
+  analyzeFoodText,
+} from "@/services/aiService";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
-
-export const GEMINI_SUGGESTED_MODELS = [
-  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tag: "Recommandé · Multimodal rapide & précis" },
-  { id: "gemini-4-argon", label: "Gemini 4 Argon", tag: "Puissance maximale · Raisonnement avancé" },
-  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite", tag: "Ultra-rapide & léger" },
-  { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite", tag: "Économique & haute fréquence" }
-];
+export const DEFAULT_GEMINI_MODEL = AI_PROVIDERS.gemini.defaultModel;
+export const GEMINI_SUGGESTED_MODELS = AI_PROVIDERS.gemini.models;
 
 const LEGACY_GEMINI_MODELS = new Set([
   "gemini-3.6-flash",
@@ -496,7 +501,7 @@ export default function App() {
   const [reopenProductModalAfterRecipeSave, setReopenProductModalAfterRecipeSave] = useState(false);
   const [recipeModalActiveTab, setRecipeModalActiveTab] = useState<"create" | "list">("create");
 
-  // --- Gemini AI states ---
+  // --- Multi-Provider AI states (Gemini, OpenAI, Mistral) ---
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [geminiImage, setGeminiImage] = useState<string | null>(null);
   const [isGeminiLoading, setIsGeminiLoading] = useState(false);
@@ -508,13 +513,49 @@ export default function App() {
   const [geminiProtein, setGeminiProtein] = useState<string | number>("");
   const [geminiCarbs, setGeminiCarbs] = useState<string | number>("");
   const [geminiFat, setGeminiFat] = useState<string | number>("");
+
+  const [aiProvider, setAiProvider] = useState<AiProvider>(() => {
+    try {
+      const saved = localStorage.getItem("calo_ai_provider") as AiProvider;
+      if (saved && (saved === "gemini" || saved === "openai" || saved === "mistral")) {
+        return saved;
+      }
+      if (localStorage.getItem("calo_openai_api_key") && !localStorage.getItem("calo_gemini_api_key")) return "openai";
+      if (localStorage.getItem("calo_mistral_api_key") && !localStorage.getItem("calo_gemini_api_key")) return "mistral";
+    } catch {}
+    return DEFAULT_AI_PROVIDER;
+  });
+
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("calo_gemini_api_key") || "");
-  const [tempModalApiKey, setTempModalApiKey] = useState("");
   const [geminiModel, setGeminiModel] = useState<string>(() => {
     const saved = localStorage.getItem("calo_gemini_model");
     if (!saved || LEGACY_GEMINI_MODELS.has(saved)) return DEFAULT_GEMINI_MODEL;
     return saved;
   });
+
+  const [openaiApiKey, setOpenAiApiKey] = useState(() => localStorage.getItem("calo_openai_api_key") || "");
+  const [openaiModel, setOpenAiModel] = useState<string>(() => {
+    return localStorage.getItem("calo_openai_model") || AI_PROVIDERS.openai.defaultModel;
+  });
+
+  const [mistralApiKey, setMistralApiKey] = useState(() => localStorage.getItem("calo_mistral_api_key") || "");
+  const [mistralModel, setMistralModel] = useState<string>(() => {
+    return localStorage.getItem("calo_mistral_model") || AI_PROVIDERS.mistral.defaultModel;
+  });
+
+  const [tempModalApiKey, setTempModalApiKey] = useState("");
+
+  const getActiveApiKey = useCallback((prov: AiProvider = aiProvider): string => {
+    if (prov === "openai") return openaiApiKey;
+    if (prov === "mistral") return mistralApiKey;
+    return geminiApiKey;
+  }, [aiProvider, openaiApiKey, mistralApiKey, geminiApiKey]);
+
+  const getActiveModel = useCallback((prov: AiProvider = aiProvider): string => {
+    if (prov === "openai") return openaiModel || AI_PROVIDERS.openai.defaultModel;
+    if (prov === "mistral") return mistralModel || AI_PROVIDERS.mistral.defaultModel;
+    return geminiModel || AI_PROVIDERS.gemini.defaultModel;
+  }, [aiProvider, openaiModel, mistralModel, geminiModel]);
 
   // ─── Mode Jour / Nuit (Dark Mode) conforme aux standards Web modernes ──────
   const [themeOverride, setThemeOverride] = useState<"light" | "dark" | null>(() => {
@@ -584,12 +625,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    localStorage.setItem("calo_ai_provider", aiProvider);
+  }, [aiProvider]);
+
+  useEffect(() => {
     localStorage.setItem("calo_gemini_api_key", geminiApiKey);
   }, [geminiApiKey]);
 
   useEffect(() => {
     localStorage.setItem("calo_gemini_model", geminiModel);
   }, [geminiModel]);
+
+  useEffect(() => {
+    localStorage.setItem("calo_openai_api_key", openaiApiKey);
+  }, [openaiApiKey]);
+
+  useEffect(() => {
+    localStorage.setItem("calo_openai_model", openaiModel);
+  }, [openaiModel]);
+
+  useEffect(() => {
+    localStorage.setItem("calo_mistral_api_key", mistralApiKey);
+  }, [mistralApiKey]);
+
+  useEffect(() => {
+    localStorage.setItem("calo_mistral_model", mistralModel);
+  }, [mistralModel]);
 
   const [tempWeightInput, setTempWeightInput] = useState<number | string>("");
   const [tempWeightDate, setTempWeightDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -654,116 +715,28 @@ export default function App() {
     setIsGeminiLoading(true);
     setGeminiError(null);
     try {
-      // Optimiser l'image pour le réseau et respecter les quotas Free Tier de Google
       const optimizedBase64 = await compressAndResizeImage(base64Image, 1024, 1024);
-      const base64Data = optimizedBase64.replace(/^data:image\/\w+;base64,/, "");
-      let result;
+      const activeKey = getActiveApiKey();
+      const currentModel = getActiveModel();
+      let result: AiFoodResult;
 
-      const activeModel = geminiModel.trim() || DEFAULT_GEMINI_MODEL;
-
-      if (geminiApiKey) {
-        // Direct client-side fetch to official Google Gemini API (fully supports GitHub Pages/Static deployment!)
-        const promptText = 
-          "Analyze this food image. Identify the food item and estimate its nutritional values. " +
-          "IMPORTANT: Provide the response STRICTLY as a single raw JSON object. Do not wrap the JSON in ```json markdown blocks, just return raw JSON text. " +
-          "The JSON keys MUST be exactly: " +
-          "'name' (string, the French name of the food or dish e.g. 'Salade César', 'Pizza Reine', 'Pomme Rouge'), " +
-          "'estimatedWeight' (number, the portion weight in grams), " +
-          "'kcalPer100g' (number, calories per 100g of this item), " +
-          "'proteinPer100g' (number, proteins in grams per 100g), " +
-          "'carbsPer100g' (number, carbohydrates in grams per 100g), " +
-          "'fatPer100g' (number, fats/lipids in grams per 100g).";
-
-        const requestBody = {
-          contents: [
-            {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: "image/jpeg",
-                    data: base64Data
-                  }
-                },
-                {
-                  text: promptText
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json"
-          }
-        };
-
-        // Modèles actuels Gemini (3.8 Flash & 4 Argon)
-        const modelsToTry = Array.from(new Set([
-          activeModel,
-          DEFAULT_GEMINI_MODEL,
-          "gemini-4-argon",
-          "gemini-3.5-flash-lite",
-          "gemini-3.1-flash-lite"
-        ]));
-
-        let lastErrorMsg = "";
-        let succeeded = false;
-
-        for (const currentModel of modelsToTry) {
-          try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-              const errData = await response.json().catch(() => ({}));
-              const msg = errData.error?.message || `Erreur (${response.status})`;
-              if (response.status === 404 || msg.toLowerCase().includes("not found")) {
-                console.warn(`Modèle ${currentModel} non disponible (404), tentative avec le modèle suivant...`);
-                lastErrorMsg = msg;
-                continue;
-              }
-              throw new Error(msg);
-            }
-
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!text) {
-              throw new Error("L'API Gemini a retourné une réponse vide.");
-            }
-
-            let cleanJson = text.trim();
-            if (cleanJson.startsWith("```")) {
-              cleanJson = cleanJson.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-            }
-            result = JSON.parse(cleanJson);
-            succeeded = true;
-            if (currentModel !== activeModel) {
-              setGeminiModel(currentModel);
-            }
-            break;
-          } catch (fetchErr: any) {
-            lastErrorMsg = fetchErr.message || "Erreur lors de la requête";
-            if (!fetchErr.message?.includes("404") && !fetchErr.message?.toLowerCase().includes("not found")) {
-              throw fetchErr;
-            }
-          }
-        }
-
-        if (!succeeded) {
-          throw new Error(lastErrorMsg || "Impossible de contacter l'API Gemini avec les modèles disponibles.");
-        }
+      if (activeKey) {
+        result = await analyzeFoodImage({
+          provider: aiProvider,
+          apiKey: activeKey,
+          model: currentModel,
+          base64Image: optimizedBase64,
+        });
       } else {
-        // Fallback to Express backend if no local key (only works if fully-fledged server is deployed)
+        // Fallback to Express backend if no local key is configured
         const response = await fetch("/api/food/analyze-image", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-gemini-model": activeModel
+            "x-ai-provider": aiProvider,
+            "x-ai-model": currentModel,
           },
-          body: JSON.stringify({ image: optimizedBase64, model: activeModel })
+          body: JSON.stringify({ image: optimizedBase64, model: currentModel }),
         });
 
         const data = await response.json();
@@ -772,7 +745,7 @@ export default function App() {
         }
         result = data;
       }
-      
+
       setGeminiName(result.name || "Aliment détecté");
       setGeminiWeight(result.estimatedWeight || 150);
       setGeminiKcal(result.kcalPer100g || 0);
@@ -792,7 +765,10 @@ export default function App() {
   const handleGeminiTextEstimate = async (queryText: string) => {
     const cleanQuery = queryText.trim();
     if (!cleanQuery) return;
-    if (!geminiApiKey) {
+    const activeKey = getActiveApiKey();
+    const currentModel = getActiveModel();
+
+    if (!activeKey) {
       setIsSearchModalOpen(false);
       setIsScannerOpen(false);
       setTempModalApiKey("");
@@ -802,72 +778,39 @@ export default function App() {
 
     setIsAiTextEstimating(true);
     try {
-      const activeModel = geminiModel.trim() || DEFAULT_GEMINI_MODEL;
-      const promptText =
-        `Tu es un expert en nutrition française (table CIQUAL / ANSES). Analyse l'aliment ou le plat suivant : "${cleanQuery}". ` +
-        "Fournis une estimation nutritionnelle précise pour 100g ainsi que le poids moyen d'une portion normale. " +
-        "IMPORTANT: Réponds UNIQUEMENT avec un objet JSON brut valide (sans balises markdown) contenant exactement les clés : " +
-        "'name' (string, nom clair en français ex: 'Couscous Royal', 'Croissant aux amandes'), " +
-        "'estimatedWeight' (number, poids moyen d'une portion en grammes), " +
-        "'kcalPer100g' (number, calories pour 100g), " +
-        "'proteinPer100g' (number, protéines en g pour 100g), " +
-        "'carbsPer100g' (number, glucides en g pour 100g), " +
-        "'fatPer100g' (number, lipides en g pour 100g).";
-
-      const modelsToTry = Array.from(new Set([
-        activeModel,
-        DEFAULT_GEMINI_MODEL,
-        "gemini-4-argon",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite"
-      ]));
-
-      let result: any = null;
-      for (const currentModel of modelsToTry) {
-        try {
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: { responseMimeType: "application/json" }
-              })
-            }
-          );
-          if (!response.ok) continue;
-          const data = await response.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!text) continue;
-          const cleanJson = text.trim().replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-          result = JSON.parse(cleanJson);
-          if (result) break;
-        } catch {
-          // try next model
-        }
-      }
-
-      if (!result) {
+      let result: AiFoodResult | null = null;
+      try {
+        result = await analyzeFoodText({
+          provider: aiProvider,
+          apiKey: activeKey,
+          model: currentModel,
+          query: cleanQuery,
+        });
+      } catch (directErr) {
+        // Fallback to Express backend proxy if direct call failed
         const res = await fetch("/api/food/analyze-text", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-gemini-api-key": geminiApiKey,
-            "x-gemini-model": activeModel,
+            "x-ai-provider": aiProvider,
+            "x-ai-api-key": activeKey,
+            "x-ai-model": currentModel,
           },
-          body: JSON.stringify({ query: cleanQuery, model: activeModel }),
+          body: JSON.stringify({ query: cleanQuery, model: currentModel }),
         });
         if (res.ok) {
           result = await res.json();
+        } else {
+          throw directErr;
         }
       }
 
       if (result) {
+        const providerName = AI_PROVIDERS[aiProvider].shortName;
         const aiProduct: UnifiedProduct = {
           id: `ai-${Date.now()}`,
           name: result.name || cleanQuery,
-          brand: `Estimé par Gemini IA (${activeModel})`,
+          brand: `Estimé par ${providerName} (${currentModel})`,
           kcalPer100g: Math.round(Number(result.kcalPer100g) || 0),
           proteinsPer100g: Math.round((Number(result.proteinPer100g) || 0) * 10) / 10,
           carbsPer100g: Math.round((Number(result.carbsPer100g) || 0) * 10) / 10,
@@ -881,8 +824,9 @@ export default function App() {
         setIsScannerOpen(false);
         setIsProductModalOpen(true);
       }
-    } catch (err) {
-      console.error("Erreur estimation texte Gemini:", err);
+    } catch (err: any) {
+      console.error(`Erreur estimation texte ${aiProvider}:`, err);
+      alert(err?.message || "Erreur lors de l'estimation par l'IA.");
     } finally {
       setIsAiTextEstimating(false);
     }
@@ -2155,7 +2099,9 @@ export default function App() {
                 </div>
                 <div className="leading-tight">
                   <span className="block font-black">Photo IA</span>
-                  <span className="text-[10px] font-semibold opacity-80">Gemini 3.8</span>
+                  <span className="text-[10px] font-semibold opacity-80">
+                    {AI_PROVIDERS[aiProvider].shortName} · {getActiveModel().replace(/^gemini-/, "").replace(/-latest$/, "").replace(/-2409$/, "")}
+                  </span>
                 </div>
               </button>
 
@@ -2633,116 +2579,201 @@ export default function App() {
               </Button>
             </Card>
 
-            {/* ─── Gemini AI Settings Card ─────────────────────────────────────────── */}
+            {/* ─── Multi-Provider AI Settings Card ─────────────────────────────────── */}
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-violet-500 animate-pulse" />
-                Configuration de l'IA Gemini
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Par défaut, l'application utilise la clé API du serveur. Si vous le souhaitez, vous pouvez renseigner votre propre clé API Gemini personnelle. Elle sera enregistrée localement dans votre navigateur de manière sécurisée.
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-violet-500 animate-pulse" />
+                  Moteur d'IA (Photo & Estimation)
+                </h3>
+                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">
+                  {AI_PROVIDERS[aiProvider].shortName}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Choisissez votre fournisseur d'intelligence artificielle pour la reconnaissance photo et l'estimation de plats. Vos clés API sont stockées uniquement dans votre navigateur.
               </p>
-              <div className="bg-violet-50/50 rounded-2xl p-3 border border-violet-100 flex items-start gap-2.5">
-                <Zap className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
-                <div className="space-y-0.5">
-                  <p className="text-xs font-extrabold text-violet-700">Obtenir une clé API gratuite</p>
-                  <p className="text-[10px] text-slate-500 leading-normal">
-                    Vous pouvez créer votre clé API en quelques secondes sur la console Google AI Studio :
-                  </p>
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="text-[10px] font-bold text-violet-600 hover:underline inline-flex items-center gap-1 mt-1"
-                  >
-                    Créer ma clé API Gemini →
-                  </a>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-500">Votre clé API Gemini</Label>
-                  {geminiApiKey ? (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                      Clé perso active
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                      Clé serveur par défaut
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    type="password"
-                    placeholder="AIzaSy..."
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.target.value.trim())}
-                    className="rounded-xl pr-10 font-mono text-sm border-slate-200 focus-visible:ring-violet-500"
-                  />
-                  {geminiApiKey && (
-                    <button
-                      onClick={() => setGeminiApiKey("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
-                      type="button"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
 
-              <div className="space-y-3 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-violet-600" />
-                    Modèle Gemini utilisé
-                  </Label>
-                  <span className="text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
-                    {geminiModel}
-                  </span>
-                </div>
-
-                {/* Raccourcis modèles suggérés */}
-                <div className="grid grid-cols-2 gap-1.5">
-                  {GEMINI_SUGGESTED_MODELS.map((m) => (
+              {/* Sélecteur de fournisseur */}
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
+                {(["gemini", "openai", "mistral"] as AiProvider[]).map((pId) => {
+                  const pMeta = AI_PROVIDERS[pId];
+                  const isSelected = aiProvider === pId;
+                  const hasKey = !!getActiveApiKey(pId);
+                  return (
                     <button
-                      key={m.id}
+                      key={pId}
                       type="button"
-                      onClick={() => setGeminiModel(m.id)}
+                      onClick={() => setAiProvider(pId)}
                       className={cn(
-                        "text-left p-2 rounded-xl border text-xs transition-all flex flex-col gap-0.5",
-                        geminiModel === m.id
-                          ? "border-violet-500 bg-violet-50/70 text-violet-900 font-bold shadow-xs"
-                          : "border-slate-200 hover:border-slate-300 text-slate-600 bg-white"
+                        "py-2 px-1.5 rounded-xl text-center transition-all flex flex-col items-center gap-0.5 relative",
+                        isSelected
+                          ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-extrabold shadow-sm"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                       )}
                     >
-                      <span className="text-[11px] leading-tight font-semibold flex items-center justify-between">
-                        {m.id}
-                        {m.id === DEFAULT_GEMINI_MODEL && (
-                          <span className="text-[8px] bg-violet-200 text-violet-800 px-1 rounded">Défaut</span>
+                      <span className="text-[11px] leading-tight flex items-center gap-1">
+                        {pMeta.shortName}
+                        {hasKey && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" title="Clé configurée" />
                         )}
                       </span>
-                      <span className="text-[9px] text-slate-400 leading-tight">{m.tag}</span>
+                      <span className="text-[8.5px] opacity-75 leading-tight truncate max-w-full">
+                        {pId === "mistral" ? "🇫🇷 Mistral" : pId === "openai" ? "ChatGPT" : "Gratuit"}
+                      </span>
                     </button>
-                  ))}
-                </div>
-
-                {/* Saisie manuelle d'un nom de modèle personnalisé */}
-                <div className="space-y-1 pt-1">
-                  <Label className="text-[10px] text-slate-400">Nom du modèle (personnalisé si Google évolue)</Label>
-                  <Input
-                    type="text"
-                    placeholder="gemini-3.8-flash"
-                    value={geminiModel}
-                    onChange={(e) => setGeminiModel(e.target.value.trim())}
-                    className="rounded-xl font-mono text-xs border-slate-200 focus-visible:ring-violet-500 h-9"
-                  />
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    ✨ Compatible avec les clés gratuites (Free Tier Google AI Studio). Repli automatique assuré en cas d'indisponibilité.
-                  </p>
-                </div>
+                  );
+                })}
               </div>
+
+              {/* Info & console de clé */}
+              {(() => {
+                const currentMeta = AI_PROVIDERS[aiProvider];
+                const currentKey = getActiveApiKey(aiProvider);
+                const currentModel = getActiveModel(aiProvider);
+
+                return (
+                  <div className="space-y-4 pt-1">
+                    <div className={cn("rounded-2xl p-3 border flex items-start gap-2.5", currentMeta.colorTheme.activeBg, currentMeta.colorTheme.border)}>
+                      <Zap className={cn("w-4 h-4 mt-0.5 flex-shrink-0", currentMeta.colorTheme.text)} />
+                      <div className="space-y-0.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <p className={cn("font-extrabold", currentMeta.colorTheme.text)}>
+                            {currentMeta.name}
+                          </p>
+                          <span className={cn("text-[9px] font-bold px-1.5 py-0.2 rounded-full", currentMeta.colorTheme.badgeBg, currentMeta.colorTheme.badgeText)}>
+                            {currentMeta.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
+                          {currentMeta.description}
+                        </p>
+                        <a 
+                          href={currentMeta.keyConsoleUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className={cn("text-[10px] font-bold hover:underline inline-flex items-center gap-1 mt-1", currentMeta.colorTheme.text)}
+                        >
+                          Créer une clé API sur {currentMeta.keyConsoleName}
+                          <ExternalLink className="w-3 h-3 ml-0.5" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Saisie clé API */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-slate-500 dark:text-slate-400">
+                          Clé API {currentMeta.shortName}
+                        </Label>
+                        {currentKey ? (
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Check className="w-2.5 h-2.5" />
+                            Clé active
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                            Clé serveur ou vide
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <Input
+                          type="password"
+                          placeholder={currentMeta.keyPlaceholder}
+                          value={currentKey}
+                          onChange={(e) => {
+                            const val = e.target.value.trim();
+                            if (aiProvider === "gemini") setGeminiApiKey(val);
+                            else if (aiProvider === "openai") setOpenAiApiKey(val);
+                            else if (aiProvider === "mistral") setMistralApiKey(val);
+                          }}
+                          className={cn("rounded-xl pr-10 font-mono text-sm border-slate-200 dark:border-slate-700 focus-visible:ring-2", currentMeta.colorTheme.ring)}
+                        />
+                        {currentKey && (
+                          <button
+                            onClick={() => {
+                              if (aiProvider === "gemini") setGeminiApiKey("");
+                              else if (aiProvider === "openai") setOpenAiApiKey("");
+                              else if (aiProvider === "mistral") setMistralApiKey("");
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                            type="button"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Sélection du modèle */}
+                    <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <Cpu className={cn("w-3.5 h-3.5", currentMeta.colorTheme.text)} />
+                          Modèle {currentMeta.shortName} actif
+                        </Label>
+                        <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", currentMeta.colorTheme.badgeBg, currentMeta.colorTheme.badgeText)}>
+                          {currentModel}
+                        </span>
+                      </div>
+
+                      {/* Raccourcis modèles suggérés */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {currentMeta.models.map((m) => {
+                          const isCurrentModel = currentModel === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                if (aiProvider === "gemini") setGeminiModel(m.id);
+                                else if (aiProvider === "openai") setOpenAiModel(m.id);
+                                else if (aiProvider === "mistral") setMistralModel(m.id);
+                              }}
+                              className={cn(
+                                "text-left p-2 rounded-xl border text-xs transition-all flex flex-col gap-0.5",
+                                isCurrentModel
+                                  ? cn("shadow-xs font-bold", currentMeta.colorTheme.border, currentMeta.colorTheme.activeBg, currentMeta.colorTheme.text)
+                                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800"
+                              )}
+                            >
+                              <span className="text-[11px] leading-tight font-semibold flex items-center justify-between">
+                                <span className="truncate">{m.label}</span>
+                                {m.id === currentMeta.defaultModel && (
+                                  <span className="text-[8px] bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-1 rounded ml-1">
+                                    Défaut
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[9px] text-slate-400 leading-tight">{m.tag}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Saisie manuelle d'un nom de modèle personnalisé */}
+                      <div className="space-y-1 pt-1">
+                        <Label className="text-[10px] text-slate-400">
+                          Nom du modèle personnalisé (si nouveau modèle publié)
+                        </Label>
+                        <Input
+                          type="text"
+                          placeholder={currentMeta.defaultModel}
+                          value={currentModel}
+                          onChange={(e) => {
+                            const val = e.target.value.trim();
+                            if (aiProvider === "gemini") setGeminiModel(val);
+                            else if (aiProvider === "openai") setOpenAiModel(val);
+                            else if (aiProvider === "mistral") setMistralModel(val);
+                          }}
+                          className="rounded-xl font-mono text-xs border-slate-200 dark:border-slate-700 h-9"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </Card>
 
             <Card className="border-none shadow-xl rounded-3xl p-6 space-y-4">
@@ -3095,12 +3126,12 @@ export default function App() {
                       {isAiTextEstimating ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          Estimation par Gemini ({geminiModel})...
+                          Estimation par {AI_PROVIDERS[aiProvider].shortName} ({getActiveModel()})...
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          Estimer « {(lastSearchQuery || tempName).slice(0, 28)} » avec Gemini IA
+                          Estimer « {(lastSearchQuery || tempName).slice(0, 28)} » avec {AI_PROVIDERS[aiProvider].shortName}
                         </>
                       )}
                     </Button>
@@ -4326,100 +4357,146 @@ export default function App() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto pr-1 py-4 -mr-1">
-            {!geminiApiKey ? (
-              <div className="space-y-5 py-2">
-                <div className="bg-amber-50/60 border border-amber-100 rounded-3xl p-4 flex items-start gap-3">
+            {!getActiveApiKey() ? (
+              <div className="space-y-4 py-1">
+                <div className="bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 rounded-3xl p-4 flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                   <div className="space-y-1">
-                    <h4 className="font-extrabold text-amber-800 text-sm">Clé API requise</h4>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Pour utiliser l'estimation par Intelligence Artificielle, vous devez renseigner votre clé API Gemini personnelle.
+                    <h4 className="font-extrabold text-amber-800 dark:text-amber-200 text-sm">Clé API requise</h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Choisissez votre fournisseur d'IA (Gemini, ChatGPT ou Mistral) et renseignez votre clé pour activer l'analyse instantanée de plats.
                     </p>
                   </div>
                 </div>
 
-                <div className="bg-violet-50/50 rounded-2xl p-4 border border-violet-100 flex items-start gap-3">
-                  <Zap className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
-                  <div className="space-y-1">
-                    <p className="text-xs font-black text-violet-700">Comment obtenir une clé gratuite ?</p>
-                    <p className="text-[10px] text-slate-500 leading-normal">
-                      Créez une clé d'API gratuite en quelques secondes sur la console officielle de Google AI Studio :
-                    </p>
-                    <a 
-                      href="https://aistudio.google.com/app/apikey" 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="text-[10px] font-bold text-violet-600 hover:underline inline-flex items-center gap-1 mt-1.5"
-                    >
-                      Créer ma clé API Gemini →
-                    </a>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold text-slate-500">Collez votre clé API Gemini</Label>
-                  <div className="relative">
-                    <Input
-                      type="password"
-                      placeholder="AIzaSy..."
-                      value={tempModalApiKey}
-                      onChange={(e) => setTempModalApiKey(e.target.value.trim())}
-                      className="rounded-xl pr-10 font-mono text-sm border-slate-200 focus-visible:ring-violet-500 h-11"
-                    />
-                    {tempModalApiKey && (
+                {/* Choix du provider */}
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+                  {(["gemini", "openai", "mistral"] as AiProvider[]).map((pId) => {
+                    const pMeta = AI_PROVIDERS[pId];
+                    const isSelected = aiProvider === pId;
+                    return (
                       <button
-                        onClick={() => setTempModalApiKey("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                        key={pId}
                         type="button"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
-                      <Cpu className="w-3.5 h-3.5 text-violet-600" />
-                      Modèle IA (Défaut : {DEFAULT_GEMINI_MODEL})
-                    </Label>
-                    <span className="text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
-                      {geminiModel}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {GEMINI_SUGGESTED_MODELS.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setGeminiModel(m.id)}
+                        onClick={() => {
+                          setAiProvider(pId);
+                          setTempModalApiKey(getActiveApiKey(pId));
+                        }}
                         className={cn(
-                          "text-left p-1.5 rounded-xl border text-[10px] transition-all",
-                          geminiModel === m.id
-                            ? "border-violet-500 bg-violet-100/60 text-violet-900 font-bold"
-                            : "border-slate-200 text-slate-600 bg-white"
+                          "py-2 px-1 rounded-xl text-center text-xs transition-all flex flex-col items-center",
+                          isSelected
+                            ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-extrabold shadow-sm"
+                            : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
                         )}
                       >
-                        <span className="font-bold block">{m.id}</span>
-                        <span className="text-[8.5px] text-slate-400">{m.tag}</span>
+                        <span className="text-[11px] font-bold">{pMeta.shortName}</span>
+                        <span className="text-[8.5px] opacity-75">{pId === "mistral" ? "🇫🇷 Mistral" : pId === "openai" ? "ChatGPT" : "Gratuit"}</span>
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
 
-                <Button 
-                  onClick={() => {
-                    if (tempModalApiKey.trim()) {
-                      setGeminiApiKey(tempModalApiKey.trim());
-                    }
-                  }}
-                  disabled={!tempModalApiKey.trim()}
-                  className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-2xl h-12 mt-2 transition-all"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  Enregistrer la clé et continuer
-                </Button>
+                {/* Info sur comment obtenir la clé */}
+                {(() => {
+                  const pMeta = AI_PROVIDERS[aiProvider];
+                  const currentModel = getActiveModel(aiProvider);
+                  return (
+                    <div className="space-y-4">
+                      <div className={cn("rounded-2xl p-3 border flex items-start gap-2.5", pMeta.colorTheme.activeBg, pMeta.colorTheme.border)}>
+                        <Zap className={cn("w-4 h-4 mt-0.5 flex-shrink-0", pMeta.colorTheme.text)} />
+                        <div className="space-y-0.5">
+                          <p className={cn("text-xs font-black", pMeta.colorTheme.text)}>
+                            Comment obtenir une clé pour {pMeta.name} ?
+                          </p>
+                          <p className="text-[10px] text-slate-500 leading-normal">
+                            {pMeta.description}
+                          </p>
+                          <a 
+                            href={pMeta.keyConsoleUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className={cn("text-[10px] font-bold hover:underline inline-flex items-center gap-1 mt-1", pMeta.colorTheme.text)}
+                          >
+                            Créer ma clé API sur {pMeta.keyConsoleName} →
+                          </a>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold text-slate-500">
+                          Collez votre clé API {pMeta.shortName}
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            type="password"
+                            placeholder={pMeta.keyPlaceholder}
+                            value={tempModalApiKey}
+                            onChange={(e) => setTempModalApiKey(e.target.value.trim())}
+                            className="rounded-xl pr-10 font-mono text-sm border-slate-200 focus-visible:ring-violet-500 h-11"
+                          />
+                          {tempModalApiKey && (
+                            <button
+                              onClick={() => setTempModalApiKey("")}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                              type="button"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                            <Cpu className="w-3.5 h-3.5 text-violet-600" />
+                            Modèle sélectionné
+                          </Label>
+                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", pMeta.colorTheme.badgeBg, pMeta.colorTheme.badgeText)}>
+                            {currentModel}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {pMeta.models.map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                if (aiProvider === "gemini") setGeminiModel(m.id);
+                                else if (aiProvider === "openai") setOpenAiModel(m.id);
+                                else if (aiProvider === "mistral") setMistralModel(m.id);
+                              }}
+                              className={cn(
+                                "text-left p-1.5 rounded-xl border text-[10px] transition-all",
+                                currentModel === m.id
+                                  ? cn("font-bold", pMeta.colorTheme.border, pMeta.colorTheme.activeBg, pMeta.colorTheme.text)
+                                  : "border-slate-200 text-slate-600 bg-white"
+                              )}
+                            >
+                              <span className="font-bold block truncate">{m.label}</span>
+                              <span className="text-[8.5px] text-slate-400 leading-tight block">{m.tag}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Button 
+                        onClick={() => {
+                          if (tempModalApiKey.trim()) {
+                            if (aiProvider === "gemini") setGeminiApiKey(tempModalApiKey.trim());
+                            else if (aiProvider === "openai") setOpenAiApiKey(tempModalApiKey.trim());
+                            else if (aiProvider === "mistral") setMistralApiKey(tempModalApiKey.trim());
+                          }
+                        }}
+                        disabled={!tempModalApiKey.trim()}
+                        className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-2xl h-12 mt-2 transition-all shadow-md shadow-violet-500/20"
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        Enregistrer la clé et continuer
+                      </Button>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <>
@@ -4427,8 +4504,10 @@ export default function App() {
                   <div className="flex items-center justify-between bg-violet-50/70 border border-violet-100 rounded-2xl px-3 py-2 mb-3 text-xs">
                     <div className="flex items-center gap-1.5 text-violet-800 font-medium">
                       <Cpu className="w-3.5 h-3.5 text-violet-600" />
-                      <span className="text-[11px] text-slate-500">Modèle :</span>
-                      <span className="font-bold text-violet-900 text-[11px]">{geminiModel}</span>
+                      <span className="text-[11px] text-slate-500">Moteur IA :</span>
+                      <span className="font-bold text-violet-900 text-[11px]">
+                        {AI_PROVIDERS[aiProvider].shortName} ({getActiveModel()})
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -4480,7 +4559,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="space-y-2 text-center max-w-xs">
-                  <h4 className="font-extrabold text-slate-700 text-lg">Gemini analyse votre assiette...</h4>
+                  <h4 className="font-extrabold text-slate-700 dark:text-slate-200 text-lg">{AI_PROVIDERS[aiProvider].shortName} analyse votre assiette...</h4>
                   <p className="text-xs text-slate-400 animate-pulse">
                     Identification de la nourriture et estimation des macronutriments en cours.
                   </p>
